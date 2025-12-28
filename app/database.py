@@ -15,6 +15,15 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL non impostata")
 
+# 🔧 FORZA psycopg v3
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgresql://",
+        "postgresql+psycopg://",
+        1,
+    )
+
+
 def add_param(url: str, **params) -> str:
     u = urlparse(url)
     q = dict(parse_qsl(u.query))
