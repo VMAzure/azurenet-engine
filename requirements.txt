@@ -1,0 +1,5 @@
+﻿fastapi
+sqlalchemy
+asyncpg
+python-dotenv
+apscheduler
