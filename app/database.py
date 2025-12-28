@@ -89,7 +89,4 @@ class DBSession:
         finally:
             self.db.close()
 
-# ============================================================
-# MODELS REGISTRATION
-# ============================================================
-from app.models import vehicle  # SOLO modelli veicolo
+
