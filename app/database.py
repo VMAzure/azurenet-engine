@@ -44,19 +44,20 @@ SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() == "true"
 engine = create_engine(
     DATABASE_URL,
     echo=SQL_ECHO,
-    pool_size=5,
-    max_overflow=5,
+    pool_size=3,
+    max_overflow=2,
     pool_pre_ping=True,
-    pool_recycle=180,
+    pool_recycle=1800,
     pool_timeout=30,
     connect_args={
         "sslmode": "require",
         "connect_timeout": 15,
+        "application_name": "azurenet_engine",
         "options": "-c statement_timeout=30000",
-        # 🔧 DISABILITA prepared statements psycopg v3
         "prepare_threshold": None,
     },
 )
+
 
 
 # ============================================================
