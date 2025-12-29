@@ -21,8 +21,10 @@ CLIENT_ID = "webservice"
 USERNAME = os.getenv("MOTORN_CLIENT_ID")
 PASSWORD = os.getenv("MOTORN_CLIENT_SECRET")
 
-if not USERNAME or not PASSWORD:
-    raise RuntimeError("Credenziali Motornet mancanti")
+def _check_credentials() -> None:
+    if not USERNAME or not PASSWORD:
+        raise RuntimeError("Credenziali Motornet mancanti")
+
 
 # ============================================================
 # TOKEN CACHE (process-level)
@@ -41,6 +43,8 @@ _token_lock = Lock()
 
 async def _login() -> None:
     global _access_token, _refresh_token, _access_expiry, _refresh_expiry
+    
+    _check_credentials()
 
     logging.info("[MOTORN] LOGIN (password)")
 
@@ -120,6 +124,8 @@ async def get_access_token() -> str:
 # ============================================================
 
 async def motornet_get(url: str) -> Dict[str, Any]:
+    _check_credentials()
+
     token = await get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
 
