@@ -32,6 +32,37 @@ NUOVO_DETTAGLIO_URL = (
 
 ANNO_RIF = datetime.now().year
 
+def delete_nuovo_modello(db, codice_modello: str):
+    """
+    Rimozione dal dominio NUOVO.
+    Se il modello è referenziato da altri domini (es. az_image),
+    il DELETE viene SKIPPATO senza errore.
+    """
+
+    # 1) allestimenti NUOVO (questi sono sempre safe)
+    db.execute(
+        text("""
+            DELETE FROM mnet_allestimenti
+            WHERE codice_modello = :codice_modello
+        """),
+        {"codice_modello": codice_modello},
+    )
+
+    # 2) modello NUOVO (best-effort)
+    try:
+        db.execute(
+            text("""
+                DELETE FROM mnet_modelli
+                WHERE codice_modello = :codice_modello
+            """),
+            {"codice_modello": codice_modello},
+        )
+    except Exception as e:
+        logging.warning(
+            "[NUOVO][MODELLI] SKIP DELETE %s (referenced elsewhere)",
+            codice_modello,
+        )
+
 # ============================================================
 # NUOVO → MARCHE (DELTA-ONLY, PRODUZIONE)
 # ============================================================
@@ -115,88 +146,111 @@ def sync_nuovo_modelli():
     for acronimo in marche:
         logging.info("[NUOVO][MODELLI] marca=%s", acronimo)
 
+        # ---- SOLO la chiamata Motornet è protetta ----
         try:
             data = asyncio.run(
                 motornet_get(
                     f"{NUOVO_MODELLI_URL}?codice_marca={acronimo}&anno={ANNO_RIF}"
                 )
             )
-
-            modelli = data.get("modelli", [])
-            seen += len(modelli)
-
-            if not modelli:
-                continue
-
-            with DBSession() as db:
-                for m in modelli:
-                    gamma = m.get("gammaModello") or {}
-                    gruppo = m.get("gruppoStorico") or {}
-                    serie = m.get("serieGamma") or {}
-
-                    codice_modello = gamma.get("codice")
-                    if not codice_modello:
-                        continue
-
-                    res = db.execute(
-                        text("""
-                            INSERT INTO mnet_modelli (
-                                codice_modello,
-                                descrizione,
-                                marca_acronimo,
-                                inizio_produzione,
-                                fine_produzione,
-                                gruppo_storico_codice,
-                                gruppo_storico_descrizione,
-                                serie_gamma_codice,
-                                serie_gamma_descrizione,
-                                inizio_commercializzazione,
-                                fine_commercializzazione
-                            )
-                            SELECT
-                                CAST(:codice_modello AS varchar),
-                                CAST(:descrizione AS varchar),
-                                CAST(:marca_acronimo AS varchar),
-                                CAST(:inizio_produzione AS date),
-                                CAST(:fine_produzione AS date),
-                                CAST(:gruppo_storico_codice AS varchar),
-                                CAST(:gruppo_storico_descrizione AS varchar),
-                                CAST(:serie_gamma_codice AS varchar),
-                                CAST(:serie_gamma_descrizione AS varchar),
-                                CAST(:inizio_commercializzazione AS date),
-                                CAST(:fine_commercializzazione AS date)
-                            WHERE NOT EXISTS (
-                                SELECT 1
-                                FROM mnet_modelli
-                                WHERE codice_modello = CAST(:codice_modello AS varchar)
-                            )
-                        """),
-                        {
-                            "codice_modello": codice_modello,
-                            "descrizione": gamma.get("descrizione"),
-                            "marca_acronimo": acronimo,
-                            "inizio_produzione": m.get("inizioProduzione"),
-                            "fine_produzione": m.get("fineProduzione"),
-                            "gruppo_storico_codice": gruppo.get("codice"),
-                            "gruppo_storico_descrizione": gruppo.get("descrizione"),
-                            "serie_gamma_codice": serie.get("codice"),
-                            "serie_gamma_descrizione": serie.get("descrizione"),
-                            "inizio_commercializzazione": m.get("inizioCommercializzazione"),
-                            "fine_commercializzazione": m.get("fineCommercializzazione"),
-                        },
-                    )
-
-
-                    if res.rowcount == 1:
-                        inserted += 1
-                        logging.info(
-                            "[NUOVO][MODELLI] inserted %s",
-                            codice_modello,
-                        )
-
-        except Exception:
-            logging.exception("[NUOVO][MODELLI] marca=%s FAILED", acronimo)
+        except RuntimeError as e:
+            logging.error(
+                "[NUOVO][MODELLI] marca=%s SKIPPED (Motornet error: %s)",
+                acronimo,
+                e,
+            )
             continue
+        except Exception:
+            logging.exception(
+                "[NUOVO][MODELLI] marca=%s FAILED (unexpected)",
+                acronimo,
+            )
+            continue
+
+        # ---- DA QUI IN POI: SEMPRE ESEGUITO ----
+        modelli = data.get("modelli", [])
+        seen += len(modelli)
+
+        if not modelli:
+            continue
+
+        with DBSession() as db:
+            for m in modelli:
+                gamma = m.get("gammaModello") or {}
+                gruppo = m.get("gruppoStorico") or {}
+                serie = m.get("serieGamma") or {}
+
+                codice_modello = gamma.get("codice")
+                if not codice_modello:
+                    continue
+
+                fine_produzione = m.get("fineProduzione")
+
+                # REGOLA DOMINIO NUOVO (CONGELATA)
+                if fine_produzione:
+                    with DBSession() as db_del:
+                        delete_nuovo_modello(db_del, codice_modello)
+                        logging.info(
+                            "[NUOVO][MODELLI] DELETE %s (fineProduzione=%s)",
+                            codice_modello,
+                            fine_produzione,
+                        )
+                    continue
+
+                res = db.execute(
+                    text("""
+                        INSERT INTO mnet_modelli (
+                            codice_modello,
+                            descrizione,
+                            marca_acronimo,
+                            inizio_produzione,
+                            fine_produzione,
+                            gruppo_storico_codice,
+                            gruppo_storico_descrizione,
+                            serie_gamma_codice,
+                            serie_gamma_descrizione,
+                            inizio_commercializzazione,
+                            fine_commercializzazione
+                        )
+                        SELECT
+                            CAST(:codice_modello AS varchar),
+                            CAST(:descrizione AS varchar),
+                            CAST(:marca_acronimo AS varchar),
+                            CAST(:inizio_produzione AS date),
+                            CAST(:fine_produzione AS date),
+                            CAST(:gruppo_storico_codice AS varchar),
+                            CAST(:gruppo_storico_descrizione AS varchar),
+                            CAST(:serie_gamma_codice AS varchar),
+                            CAST(:serie_gamma_descrizione AS varchar),
+                            CAST(:inizio_commercializzazione AS date),
+                            CAST(:fine_commercializzazione AS date)
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM mnet_modelli
+                            WHERE codice_modello = CAST(:codice_modello AS varchar)
+                        )
+                    """),
+                    {
+                        "codice_modello": codice_modello,
+                        "descrizione": gamma.get("descrizione"),
+                        "marca_acronimo": acronimo,
+                        "inizio_produzione": m.get("inizioProduzione"),
+                        "fine_produzione": m.get("fineProduzione"),
+                        "gruppo_storico_codice": gruppo.get("codice"),
+                        "gruppo_storico_descrizione": gruppo.get("descrizione"),
+                        "serie_gamma_codice": serie.get("codice"),
+                        "serie_gamma_descrizione": serie.get("descrizione"),
+                        "inizio_commercializzazione": m.get("inizioCommercializzazione"),
+                        "fine_commercializzazione": m.get("fineCommercializzazione"),
+                    },
+                )
+
+                if res.rowcount == 1:
+                    inserted += 1
+                    logging.info(
+                        "[NUOVO][MODELLI] inserted %s",
+                        codice_modello,
+                    )
 
     logging.info(
         "[NUOVO][MODELLI] DONE (new=%d, total_seen=%d)",
