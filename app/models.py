@@ -8,9 +8,14 @@
     DateTime,
     Text,
     UniqueConstraint,
-)
-from sqlalchemy.sql import func
+    ForeignKey,
+    Numeric,
+    BigInteger
 
+)
+
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.sql import func
 from app.database import Base
 
 
@@ -239,3 +244,218 @@ class MnetDettaglioUsato(Base):
 
     paese_prod = Column(String)
     neo_patentati = Column(Boolean)
+
+# ============================================================
+# VIC USATO (vcom)
+# ============================================================
+
+class MnetVcomMarche(Base):
+    __tablename__ = "mnet_vcom_marche"
+
+    acronimo = Column(Text, primary_key=True)
+    nome = Column(Text, nullable=False)
+    logo = Column(Text)
+
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class MnetVcomModelli(Base):
+    __tablename__ = "mnet_vcom_modelli"
+
+    codice_modello = Column(Text, primary_key=True)     # es: CIT0957
+    marca_acronimo = Column(Text, nullable=False, index=True)
+    descrizione = Column(Text, nullable=False)
+
+    gruppo_storico_codice = Column(Text)
+    gruppo_storico_descrizione = Column(Text)
+
+    serie_gamma_codice = Column(Text)
+    serie_gamma_descrizione = Column(Text)
+
+    inizio_produzione = Column(Date)
+    fine_produzione = Column(Date)
+
+    inizio_commercializzazione = Column(Date)
+    fine_commercializzazione = Column(Date)
+
+    modello_breve_carrozzeria = Column(Text)
+    foto = Column(Text)
+    prezzo_minimo = Column(Numeric)
+
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class MnetVcomVersioni(Base):
+    __tablename__ = "mnet_vcom_versioni"
+
+    codice_motornet_uni = Column(Text, primary_key=True)  # es: C000799
+    codice_modello = Column(
+        Text,
+        ForeignKey("mnet_vcom_modelli.codice_modello", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    nome = Column(Text, nullable=False)
+
+    data_da = Column(Date)
+    data_a = Column(Date)
+
+    inizio_produzione = Column(Date)
+    fine_produzione = Column(Date)
+
+    marca_acronimo = Column(Text)
+
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class MnetVcomDettagli(Base):
+    __tablename__ = "mnet_vcom_dettagli"
+
+    codice_motornet_uni = Column(
+        Text,
+        ForeignKey("mnet_vcom_versioni.codice_motornet_uni", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    # --- Marca / modello ---
+    marca_acronimo = Column(Text)
+    marca_nome = Column(Text)
+
+    codice_modello = Column(Text)
+    descrizione_modello = Column(Text)
+
+    allestimento = Column(Text)
+    immagine = Column(Text)
+
+    codice_costruttore = Column(Text)
+    codice_motore = Column(Text)
+
+    # --- Alimentazione / tipo ---
+    alimentazione_codice = Column(Text)
+    alimentazione_descrizione = Column(Text)
+
+    tipo_codice = Column(Text)
+    tipo_descrizione = Column(Text)
+
+    categoria_codice = Column(Text)
+    categoria_descrizione = Column(Text)
+
+    # --- Motore / prestazioni ---
+    cilindrata = Column(Integer)
+    hp = Column(Integer)
+    kw = Column(Integer)
+    euro = Column(Text)
+
+    # --- Prezzi ---
+    prezzo_listino = Column(Numeric)
+    prezzo_accessori = Column(Numeric)
+    data_listino = Column(Date)
+
+    # --- Trasmissione ---
+    cambio_codice = Column(Text)
+    cambio_descrizione = Column(Text)
+
+    trazione_codice = Column(Text)
+    trazione_descrizione = Column(Text)
+
+    # --- Dimensioni ---
+    lunghezza = Column(Numeric)
+    larghezza = Column(Numeric)
+    altezza = Column(Numeric)
+    passo = Column(Numeric)
+
+    porte = Column(Integer)
+    posti = Column(Integer)
+
+    # --- Elettrico / autonomia ---
+    autonomia_media = Column(Numeric)
+    autonomia_massima = Column(Numeric)
+
+    # --- Pesi ---
+    peso = Column(Numeric)
+    peso_vuoto = Column(Numeric)
+    peso_totale_terra = Column(Numeric)
+
+    portata = Column(Numeric)
+
+    accessi_disponibili = Column(BigInteger)
+
+    accessori_serie = Column(JSONB)
+    accessori_opzionali = Column(JSONB)
+
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class MnetVcomSyncState(Base):
+    __tablename__ = "mnet_vcom_sync_state"
+
+    job_name = Column(Text, primary_key=True)
+    last_key = Column(Text)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    
+class MnetVcomSyncError(Base):
+    __tablename__ = "mnet_vcom_sync_errors"
+
+    job_name = Column(Text, nullable=False)
+    key = Column(Text, nullable=False)
+    error = Column(Text, nullable=False)
+
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class MnetVcomSyncState(Base):
+    __tablename__ = "mnet_vcom_sync_state"
+
+    job_name = Column(Text, primary_key=True)
+    last_key = Column(Text)
+
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+class MnetVcomSyncError(Base):
+    __tablename__ = "mnet_vcom_sync_errors"
+
+    job_name = Column(Text, nullable=False)
+    key = Column(Text, nullable=False)
+    error = Column(Text, nullable=False)
+
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+    )

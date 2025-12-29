@@ -44,7 +44,7 @@ SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() == "true"
 engine = create_engine(
     DATABASE_URL,
     echo=SQL_ECHO,
-    pool_size=5,            # batch engine → pool ridotto
+    pool_size=5,
     max_overflow=5,
     pool_pre_ping=True,
     pool_recycle=180,
@@ -53,8 +53,11 @@ engine = create_engine(
         "sslmode": "require",
         "connect_timeout": 15,
         "options": "-c statement_timeout=30000",
+        # 🔧 DISABILITA prepared statements psycopg v3
+        "prepare_threshold": None,
     },
 )
+
 
 # ============================================================
 # ORM BASE & SESSION
