@@ -49,3 +49,23 @@ def schedule_vcom_jobs(scheduler):
         max_instances=1,
         coalesce=True,
     )
+
+from apscheduler.schedulers.background import BackgroundScheduler
+import logging
+
+
+def build_scheduler():
+    """
+    Entry point per lo scheduler.
+    Usato da main.py
+    """
+    logging.info("[SCHEDULER] building scheduler")
+
+    scheduler = BackgroundScheduler()
+
+    # registra job VCOM
+    schedule_vcom_jobs(scheduler)
+
+    logging.info("[SCHEDULER] VCOM jobs registered")
+
+    return scheduler
