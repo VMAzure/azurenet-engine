@@ -11,7 +11,9 @@
     ForeignKey,
     Numeric,
     BigInteger,
-    TIMESTAMP
+    TIMESTAMP,
+    CheckConstraint,
+
 
 )
 
@@ -27,6 +29,8 @@ from app.database import Base
 
 class MnetMarche(Base):
     __tablename__ = "mnet_marche"
+    __table_args__ = {"schema": "public"}
+
 
     acronimo = Column(String, primary_key=True)
     nome = Column(String, nullable=False)
@@ -36,6 +40,8 @@ class MnetMarche(Base):
 
 class MnetModelli(Base):
     __tablename__ = "mnet_modelli"
+    __table_args__ = {"schema": "public"}
+
 
     codice_modello = Column(String, primary_key=True)
     marca_acronimo = Column(String, nullable=False, index=True)
@@ -65,6 +71,8 @@ class MnetModelli(Base):
 
 class MnetAllestimenti(Base):
     __tablename__ = "mnet_allestimenti"
+    __table_args__ = {"schema": "public"}
+
 
     codice_motornet_uni = Column(String, primary_key=True)
     codice_modello = Column(String, nullable=False, index=True)
@@ -84,6 +92,7 @@ class MnetAllestimenti(Base):
 
 class MnetDettagli(Base):
     __tablename__ = "mnet_dettagli"
+    __table_args__ = {"schema": "public"}
 
     codice_motornet_uni = Column(String, primary_key=True)
 
@@ -418,6 +427,8 @@ class MnetDettaglioUsato(Base):
 
 class MnetVcomMarche(Base):
     __tablename__ = "mnet_vcom_marche"
+    __table_args__ = {"schema": "public"}
+
 
     acronimo = Column(Text, primary_key=True)
     nome = Column(Text, nullable=False)
@@ -433,6 +444,8 @@ class MnetVcomMarche(Base):
 
 class MnetVcomModelli(Base):
     __tablename__ = "mnet_vcom_modelli"
+    __table_args__ = {"schema": "public"}
+
 
     codice_modello = Column(Text, primary_key=True)     # es: CIT0957
     marca_acronimo = Column(Text, nullable=False, index=True)
@@ -464,6 +477,7 @@ class MnetVcomModelli(Base):
 
 class MnetVcomVersioni(Base):
     __tablename__ = "mnet_vcom_versioni"
+    __table_args__ = {"schema": "public"}
 
     codice_motornet_uni = Column(Text, primary_key=True)  # es: C000799
     codice_modello = Column(
@@ -493,6 +507,7 @@ class MnetVcomVersioni(Base):
 
 class MnetVcomDettagli(Base):
     __tablename__ = "mnet_vcom_dettagli"
+    __table_args__ = {"schema": "public"}
 
     codice_motornet_uni = Column(
         Text,
@@ -574,11 +589,33 @@ class MnetVcomDettagli(Base):
     )
 
 
+
+    
+class MnetVcomSyncError(Base):
+    __tablename__ = "mnet_vcom_sync_errors"
+    __table_args__ = {"schema": "public"}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    job_name = Column(Text, nullable=False)
+    key = Column(Text, nullable=False)
+    error = Column(Text, nullable=False)
+
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class MnetVcomSyncState(Base):
     __tablename__ = "mnet_vcom_sync_state"
+    __table_args__ = {"schema": "public"}
+
 
     job_name = Column(Text, primary_key=True)
     last_key = Column(Text)
+
     updated_at = Column(
         DateTime,
         nullable=False,
@@ -587,26 +624,41 @@ class MnetVcomSyncState(Base):
     )
 
     
-class MnetVcomSyncError(Base):
-    __tablename__ = "mnet_vcom_sync_errors"
+class MnetModelliCdnPreview(Base):
+    __tablename__ = "mnet_modelli_cdn_preview"
 
-    job_name = Column(Text, nullable=False)
-    key = Column(Text, nullable=False)
-    error = Column(Text, nullable=False)
+    id = Column(Integer, primary_key=True)
 
-    created_at = Column(
-        DateTime,
+    codice_modello = Column(
+        String,
+        ForeignKey("public.mnet_modelli.codice_modello", ondelete="CASCADE"),
         nullable=False,
-        server_default=func.now(),
+        unique=True,
     )
 
 
-class MnetVcomSyncState(Base):
-    __tablename__ = "mnet_vcom_sync_state"
+    # Parametri CDN risolti
+    make = Column(String, nullable=False)
+    model_family = Column(String, nullable=False)
+    model_variant = Column(String, nullable=True)
 
-    job_name = Column(Text, primary_key=True)
-    last_key = Column(Text)
+    # URL CDN Imagin (preview, NON finale)
+    url_cdn = Column(Text, nullable=False)
 
+    # Fonte del mapping
+    source = Column(
+        String,
+        nullable=False,
+    )
+
+    # Validazione manuale
+    is_valid = Column(Boolean, nullable=False, default=False)
+    checked_at = Column(DateTime, nullable=True)
+    checked_by = Column(String, nullable=True)
+    note = Column(Text, nullable=True)
+
+    # Audit
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(
         DateTime,
         nullable=False,
@@ -614,15 +666,26 @@ class MnetVcomSyncState(Base):
         onupdate=func.now(),
     )
 
-class MnetVcomSyncError(Base):
-    __tablename__ = "mnet_vcom_sync_errors"
-
-    job_name = Column(Text, nullable=False)
-    key = Column(Text, nullable=False)
-    error = Column(Text, nullable=False)
-
-    created_at = Column(
-        DateTime,
-        nullable=False,
-        server_default=func.now(),
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('az_image', 'normalized')",
+            name="ck_mnet_modelli_cdn_preview_source",
+        ),
     )
+
+    # Relazione (solo lettura, utile in debug)
+    modello = relationship(
+        "MnetModelli",
+        backref="cdn_preview",
+        lazy="joined",
+    )
+
+class AzImage(Base):
+    __tablename__ = "az_image"
+    __table_args__ = {"schema": "public"}
+
+    id = Column(Integer, primary_key=True, index=True)
+    codice_modello = Column(String, unique=True, index=True, nullable=False)
+    marca_alias = Column(String, nullable=True)
+    modello_alias = Column(String, nullable=True)
+    model_variant = Column(String, nullable=True)
