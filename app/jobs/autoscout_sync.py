@@ -1,5 +1,4 @@
 ﻿import logging
-import json
 from datetime import datetime
 
 from sqlalchemy import text
@@ -99,69 +98,21 @@ def autoscout_sync_job():
                     raise RuntimeError("Contesto usatoin non trovato")
 
                 # ------------------------------------------------------------
-                # 3.5️⃣ Carica dettagli MNET (bodyType, fuel, transmission)
+                # 3️⃣.5️⃣ Carica dettagli MNET BASE (vista unificata) — C e X
                 # ------------------------------------------------------------
-                det = session.execute(
+                det_base = session.execute(
                     text("""
-                        SELECT
-                            tipo,
-                            segmento,
-                            alimentazione,
-                            cambio,
-                            kw,
-                            cilindrata,
-                            cilindri,
-                            peso_vuoto,
-                            posti,
-                            porte
-                        FROM mnet_dettagli_usato
+                        SELECT *
+                        FROM v_mnet_dettagli_unificati
                         WHERE codice_motornet_uni = :codice
                     """),
                     {"codice": auto["codice_motornet"]},
                 ).mappings().first()
 
-                if not det:
+                if not det_base:
                     raise RuntimeError(
-                        f"Dettagli MNET non trovati (mnet_dettagli_usato): codice={auto['codice_motornet']}"
+                        f"Dettagli Motornet non trovati (v_mnet_dettagli_unificati): codice={auto['codice_motornet']}"
                     )
-
-                # ------------------------------------------------------------
-                # 3.6️⃣ Resolve dati tecnici veicolo (normalizzazione robusta)
-                # ------------------------------------------------------------
-                def _to_int(val):
-                    try:
-                        if val is None:
-                            return None
-                        return int(str(val).strip())
-                    except (ValueError, TypeError):
-                        return None
-
-                as24_power = _to_int(det.get("kw"))
-                as24_cylinder_capacity = _to_int(det.get("cilindrata"))
-                as24_cylinder_count = _to_int(det.get("cilindri"))
-                as24_empty_weight = _to_int(det.get("peso_vuoto"))
-                as24_seat_count = _to_int(det.get("posti"))
-                as24_door_count = _to_int(det.get("porte"))
-
-                last_service_date = auto.get("data_ultimo_intervento")
-                as24_last_service_date = (
-                    last_service_date.strftime("%Y-%m")
-                    if last_service_date
-                    else None
-                )
-
-                description = usatoin.get("descrizione")
-                as24_description = description.strip() if description and description.strip() else None
-
-                logger.info(
-                    "[AUTOSCOUT_DEBUG_TECH] power=%s cyl_cap=%s cyl=%s weight=%s seats=%s doors=%s",
-                    as24_power,
-                    as24_cylinder_capacity,
-                    as24_cylinder_count,
-                    as24_empty_weight,
-                    as24_seat_count,
-                    as24_door_count,
-                )
 
                 # ------------------------------------------------------------
                 # 4️⃣ Config dealer
@@ -186,119 +137,233 @@ def autoscout_sync_job():
                 customer_id = resolve_customer_id(sell_id)
 
                 # ------------------------------------------------------------
-                # 5.5 Create listing AutoScout24
+                # 5️.1 Resolve Mapping AutoScout24 (make / model / vehicle type)
                 # ------------------------------------------------------------
                 mapping = session.execute(
                     text("""
                         SELECT
                             as24_make_id,
-                            as24_model_id
-                        FROM autoscout_model_map_v2
+                            as24_model_id,
+                            as24_vehicle_type
+                        FROM public.autoscout_model_map_v2
                         WHERE codice_motornet_uni = :codice
                     """),
                     {"codice": auto["codice_motornet"]},
                 ).mappings().first()
 
                 if not mapping:
-                    raise RuntimeError("Mapping AutoScout24 non trovato (worker)")
+                    raise RuntimeError("Mapping AutoScout24 mancante")
+
+                if mapping["as24_vehicle_type"] not in ("C", "X"):
+                    raise RuntimeError("as24_vehicle_type non valido o mancante")
 
                 as24_make_id = mapping["as24_make_id"]
                 as24_model_id = mapping["as24_model_id"]
 
                 if not as24_make_id or not as24_model_id:
-                    raise RuntimeError("Mapping AutoScout24 incompleto (worker)")
+                    raise RuntimeError("Mapping AutoScout24 incompleto (make/model)")
 
+                # ------------------------------------------------------------
+                # 5.2️⃣ Guardia coerenza catalog Motornet vs mapping AS24
+                # ------------------------------------------------------------
+                if mapping["as24_vehicle_type"] == "C" and det_base["catalog"] != "auto":
+                    raise RuntimeError(
+                        "Mismatch Motornet catalog vs AS24 vehicle_type (atteso auto)"
+                    )
+
+                if mapping["as24_vehicle_type"] == "X" and det_base["catalog"] not in ("vic",):
+                    raise RuntimeError(
+                        "Mismatch Motornet catalog vs AS24 vehicle_type (atteso vic)"
+                    )
+
+
+                # ------------------------------------------------------------
+                # 5.5️⃣ Arricchimento AUTO (obbligatorio per C)
+                # ------------------------------------------------------------
+                det_auto = None
+
+                if mapping["as24_vehicle_type"] == "C":
+                    det_auto = session.execute(
+                        text("""
+                            SELECT
+                                tipo,
+                                segmento,
+                                alimentazione,
+                                cambio,
+                                kw,
+                                cilindrata,
+                                cilindri,
+                                peso_vuoto,
+                                posti,
+                                porte
+                            FROM mnet_dettagli_usato
+                            WHERE codice_motornet_uni = :codice
+                        """),
+                        {"codice": auto["codice_motornet"]},
+                    ).mappings().first()
+
+                    if not det_auto:
+                        raise RuntimeError(
+                            "Dettagli AUTO mancanti (mnet_dettagli_usato)"
+                        )
+
+                logger.info(
+                    "[AUTOSCOUT_CTX] vehicle_type=%s catalog=%s codice=%s",
+                    mapping["as24_vehicle_type"],
+                    det_base["catalog"],
+                    auto["codice_motornet"],
+                )
+
+                # ------------------------------------------------------------
+                # 5.6️⃣ Resolve dati tecnici veicolo (normalizzazione robusta)
+                # ------------------------------------------------------------
+                def _to_int(val):
+                    try:
+                        if val is None:
+                            return None
+                        return int(str(val).strip())
+                    except (ValueError, TypeError):
+                        return None
+                
+                as24_power = None
+                as24_cylinder_capacity = None
+                as24_cylinder_count = None
+                as24_empty_weight = None
+                as24_seat_count = None
+                as24_door_count = None
+
+                if mapping["as24_vehicle_type"] == "C":
+
+                    as24_power = _to_int(det_auto["kw"])
+                    as24_cylinder_capacity = _to_int(det_auto["cilindrata"])
+                    as24_cylinder_count = _to_int(det_auto["cilindri"])
+                    as24_empty_weight = _to_int(det_auto["peso_vuoto"])
+                    as24_seat_count = _to_int(det_auto["posti"])
+                    as24_door_count = _to_int(det_auto["porte"])
+
+                last_service_date = auto.get("data_ultimo_intervento")
+                as24_last_service_date = (
+                    last_service_date.strftime("%Y-%m")
+                    if last_service_date
+                    else None
+                )
+
+                description = usatoin.get("descrizione")
+                as24_description = description.strip() if description and description.strip() else None
+
+                logger.info(
+                    "[AUTOSCOUT_DEBUG_TECH] power=%s cyl_cap=%s cyl=%s weight=%s seats=%s doors=%s",
+                    as24_power,
+                    as24_cylinder_capacity,
+                    as24_cylinder_count,
+                    as24_empty_weight,
+                    as24_seat_count,
+                    as24_door_count,
+                )
+                
+                
                 # ------------------------------------------------------------
                 # 5.6️⃣ Resolve bodyType AutoScout24 (DB-driven, production-safe)
                 # ------------------------------------------------------------
-
-                mnet_tipo = det.get("tipo")
-                mnet_segmento = det.get("segmento")
-
-
                 as24_bodytype_id = None
+                as24_primary_fuel_type = None
+                as24_fuel_category = None
+                as24_transmission = None
 
-                if mnet_tipo is not None:
-                    bodytype_row = session.execute(
-                        text("""
-                            SELECT as24_bodytype_id
-                            FROM autoscout_bodytype_map
-                            WHERE mnet_tipo = :mnet_tipo
-                        """),
-                        {"mnet_tipo": mnet_tipo},
-                    ).mappings().first()
+                
+                if mapping["as24_vehicle_type"] == "C":
 
-                    if not bodytype_row:
-                        raise RuntimeError(
-                            f"BodyType MNET non mappato (autoscout_bodytype_map): tipo={mnet_tipo}"
-                        )
+                    mnet_tipo = det_auto["tipo"]
+                    mnet_segmento = det_auto["segmento"]
 
-                    as24_bodytype_id = bodytype_row["as24_bodytype_id"]
 
-                else:
-                    # Fallback guidato per tipo NULL
-                    if mnet_segmento in ("Pick-up", "Fuoristrada"):
-                        as24_bodytype_id = 4  # SUV/Fuoristrada/Pick-up
+                    as24_bodytype_id = None
+
+                    if mnet_tipo is not None:
+                        bodytype_row = session.execute(
+                            text("""
+                                SELECT as24_bodytype_id
+                                FROM autoscout_bodytype_map
+                                WHERE mnet_tipo = :mnet_tipo
+                            """),
+                            {"mnet_tipo": mnet_tipo},
+                        ).mappings().first()
+
+                        if not bodytype_row:
+                            raise RuntimeError(
+                                f"BodyType MNET non mappato (autoscout_bodytype_map): tipo={mnet_tipo}"
+                            )
+
+                        as24_bodytype_id = bodytype_row["as24_bodytype_id"]
+
                     else:
-                        as24_bodytype_id = 7  # Altro
+                        # Fallback guidato per tipo NULL
+                        if mnet_segmento in ("Pick-up", "Fuoristrada"):
+                            as24_bodytype_id = 4  # SUV/Fuoristrada/Pick-up
+                        else:
+                            as24_bodytype_id = 7  # Altro
 
-                if not as24_bodytype_id:
-                    raise RuntimeError(
-                        f"BodyType AutoScout24 non risolto | tipo={mnet_tipo} segmento={mnet_segmento}"
-                    )
+                    if not as24_bodytype_id:
+                        raise RuntimeError(
+                            f"BodyType AutoScout24 non risolto | tipo={mnet_tipo} segmento={mnet_segmento}"
+                        )
     
                 # ------------------------------------------------------------
-                # 5.7️⃣ Resolve Fuel AutoScout24 (primaryFuelType + fuelCategory)
+                # 5.6.1️⃣ BodyType AutoScout24 per VIC (vehicleType = X)
                 # ------------------------------------------------------------
-
-                mnet_alimentazione = det.get("alimentazione")
-
-                if not mnet_alimentazione:
-                    raise RuntimeError("Alimentazione MNET mancante")
-
-                fuel_row = session.execute(
-                    text("""
-                        SELECT
-                            as24_primary_fuel_type,
-                            as24_fuel_category
-                        FROM autoscout_fuel_map
-                        WHERE mnet_alimentazione = :alimentazione
-                    """),
-                    {"alimentazione": mnet_alimentazione},
-                ).mappings().first()
-
-                if not fuel_row:
-                    raise RuntimeError(
-                        f"Fuel MNET non mappato (autoscout_fuel_map): alimentazione={mnet_alimentazione}"
-                    )
-
-                as24_primary_fuel_type = fuel_row["as24_primary_fuel_type"]
-                as24_fuel_category = fuel_row["as24_fuel_category"]
-
-                if not as24_primary_fuel_type or not as24_fuel_category:
-                    raise RuntimeError(
-                        f"Fuel AutoScout24 non risolto | alimentazione={mnet_alimentazione}"
-                    )
+                if mapping["as24_vehicle_type"] == "X":
+                    # AS24 reference: bodyType 7 = "Altro" è valido per X
+                    as24_bodytype_id = 7
 
                 # ------------------------------------------------------------
-                # 5.8️⃣ Resolve Transmission AutoScout24 (AS24 enum)
+                # 5.7️⃣ Resolve Fuel + Transmission AutoScout24 (solo C)
                 # ------------------------------------------------------------
+                if mapping["as24_vehicle_type"] == "C":
 
-                mnet_cambio = det.get("cambio")
+                    mnet_alimentazione = det_auto["alimentazione"]
 
-                if mnet_cambio in ("Manuale", "Manuale sequenziale", "Sequenziale"):
-                    as24_transmission = "M"
-                elif mnet_cambio in (
-                    "Automatico",
-                    "Automatico sequenziale",
-                    "Automatico doppia frizione",
-                    "CVT",
-                ):
-                    as24_transmission = "A"
-                else:
-                    # Fallback conservativo
-                    as24_transmission = "M"
+                    if not mnet_alimentazione:
+                        raise RuntimeError("Alimentazione MNET mancante")
 
+                    fuel_row = session.execute(
+                        text("""
+                            SELECT
+                                as24_primary_fuel_type,
+                                as24_fuel_category
+                            FROM autoscout_fuel_map
+                            WHERE mnet_alimentazione = :alimentazione
+                        """),
+                        {"alimentazione": mnet_alimentazione},
+                    ).mappings().first()
+
+                    if not fuel_row:
+                        raise RuntimeError(
+                            f"Fuel MNET non mappato (autoscout_fuel_map): alimentazione={mnet_alimentazione}"
+                        )
+
+                    as24_primary_fuel_type = fuel_row["as24_primary_fuel_type"]
+                    as24_fuel_category = fuel_row["as24_fuel_category"]
+
+                    if not as24_primary_fuel_type or not as24_fuel_category:
+                        raise RuntimeError(
+                            f"Fuel AutoScout24 non risolto | alimentazione={mnet_alimentazione}"
+                        )
+
+                    mnet_cambio = det_auto["cambio"]
+
+                    if mnet_cambio in ("Manuale", "Manuale sequenziale", "Sequenziale"):
+                        as24_transmission = "M"
+                    elif mnet_cambio in (
+                        "Automatico",
+                        "Automatico sequenziale",
+                        "Automatico doppia frizione",
+                        "CVT",
+                    ):
+                        as24_transmission = "A"
+                    else:
+                        as24_transmission = "M"
+
+                
                 # ------------------------------------------------------------
                 # 5.9️⃣ Load Equipment AutoScout24 (DB-driven, definitivo)
                 # ------------------------------------------------------------
@@ -427,6 +492,13 @@ def autoscout_sync_job():
                         )
                         continue
 
+                # ------------------------------------------------------------
+                # 5.8.1️⃣ Normalizzazione payload per vehicleType = X
+                # ------------------------------------------------------------
+                if mapping["as24_vehicle_type"] == "X":
+                    as24_primary_fuel_type = None
+                    as24_fuel_category = None
+                    as24_transmission = None
 
 
                 payload = build_minimal_payload(
@@ -571,6 +643,6 @@ def autoscout_sync_job():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     logger.info("[AUTOSCOUT_CREATE] Avvio manuale job")
-    autoscout_create_job()
+    autoscout_sync_job()
 
 
