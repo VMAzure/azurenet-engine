@@ -374,17 +374,35 @@ def autoscout_sync_job():
 
                 image_ids = []
 
+                ALLOWED_AS24_IMAGE_TYPES = {
+                    "image/jpeg",
+                    "image/png",
+                    "image/gif",
+                }
+
+
                 for idx, r in enumerate(rows, start=1):
                     try:
                         resp = requests.get(r["media_url"], timeout=15)
                         resp.raise_for_status()
 
+                        content_type = resp.headers.get("Content-Type", "").split(";")[0].lower()
+
+                        if content_type not in ALLOWED_AS24_IMAGE_TYPES:
+                            logger.warning(
+                                "[AUTOSCOUT_CREATE] Media saltato (content-type non valido AS24) | media_id=%s type=%s",
+                                r["media_id"],
+                                content_type,
+                            )
+                            continue
+
                         image_id = upload_image(
                             customer_id=customer_id,
                             image_bytes=resp.content,
-                            content_type=resp.headers.get("Content-Type", "image/jpeg"),
+                            content_type=content_type,
                             test_mode=config["test_mode"],
                         )
+
 
                         image_ids.append(image_id)
 
