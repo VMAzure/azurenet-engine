@@ -27,7 +27,7 @@ BATCH_SIZE = 5
 # JOB: AUTOSCOUT CREATE (STEP B)
 # ============================================================
 
-def autoscout_create_job():
+def autoscout_sync_job():
     session = SessionLocal()
 
     try:
