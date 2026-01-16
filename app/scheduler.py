@@ -157,6 +157,28 @@ def schedule_vcom_jobs(scheduler):
         coalesce=True,
     )
 
+    
+
+from app.jobs.autoscout_sync import autoscout_sync_job
+
+def schedule_autoscout_jobs(scheduler):
+    # --------------------------------------------------
+    # AUTOSCOUT24 — SYNC AUTO USATE (CREATE / UPDATE / DELETE)
+    # --------------------------------------------------
+
+    scheduler.add_job(
+        func=autoscout_sync_job,
+        trigger=CronTrigger(minute="*/1"),  # ogni 1 minuto
+        id="autoscout_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    logging.info("[SCHEDULER] AUTOSCOUT SYNC job registered")
+
+
+
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 
@@ -182,6 +204,8 @@ def build_scheduler():
     schedule_usato_jobs(scheduler)
     logging.info("[SCHEDULER] USATO jobs registered")
 
+    # Pubblica AS24    
+    schedule_autoscout_jobs(scheduler)
+    logging.info("[SCHEDULER] AUTOSCOUT jobs registered")
+
     return scheduler
-
-

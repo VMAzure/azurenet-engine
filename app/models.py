@@ -18,7 +18,7 @@
 )
 
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -689,3 +689,28 @@ class AzImage(Base):
     marca_alias = Column(String, nullable=True)
     modello_alias = Column(String, nullable=True)
     model_variant = Column(String, nullable=True)
+
+class MnetModelliImgOldAI(Base):
+    __tablename__ = "mnet_modelli_img_old_ai"
+
+    codice_modello = Column(String(20), primary_key=True)
+    job_id = Column(UUID(as_uuid=True), nullable=False)
+
+    status = Column(
+        String(20),
+        nullable=False,
+        default="queued",  # queued | done | failed
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

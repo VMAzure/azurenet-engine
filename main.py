@@ -1,5 +1,13 @@
 ﻿import time
 import logging
+from dotenv import load_dotenv
+from pathlib import Path
+
+
+ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=ENV_PATH)
+
+import os
 
 from app.scheduler import build_scheduler
 

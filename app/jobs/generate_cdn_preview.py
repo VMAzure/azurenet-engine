@@ -37,7 +37,7 @@ def normalize_model_family(descrizione: str) -> str:
 
 def build_cdn_url(make: str, model_family: str) -> str:
     params = {
-        "customer": "saleads",
+        "customer": "leasys",
         "make": make,
         "modelFamily": model_family,
         "angle": 23,
