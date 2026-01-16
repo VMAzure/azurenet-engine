@@ -208,4 +208,5 @@ def build_scheduler():
     schedule_autoscout_jobs(scheduler)
     logging.info("[SCHEDULER] AUTOSCOUT jobs registered")
 
+
     return scheduler
