@@ -19,6 +19,8 @@ def build_minimal_payload(
     as24_description: str | None,
     as24_equipment_ids: list[int] | None,
     as24_has_full_service_history: bool | None,
+    as24_model_version: str | None = None,
+
 ) -> dict:
 
     """
@@ -122,6 +124,8 @@ def build_minimal_payload(
             "channels": [{"id": "AS24"}],
         },
     }
+    if as24_model_version:
+        payload["modelVersion"] = as24_model_version
 
     # -----------------------------
     # Dati tecnici veicolo

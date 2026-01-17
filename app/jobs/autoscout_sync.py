@@ -324,6 +324,26 @@ def autoscout_sync_job():
 
                 description = usatoin.get("descrizione")
                 as24_description = description.strip() if description and description.strip() else None
+               
+                # ------------------------------------------------------------
+                # 5.6.x️⃣ Resolve modelVersion AutoScout24 (ALIAS → MNET)
+                # ------------------------------------------------------------
+                as24_model_version = None
+
+                alias_allestimento = usatoin.get("alias_allestimento")
+                mnet_allestimento = det_base.get("allestimento") if det_base else None
+
+                if alias_allestimento and alias_allestimento.strip():
+                    as24_model_version = alias_allestimento.strip()
+                elif mnet_allestimento and mnet_allestimento.strip():
+                    as24_model_version = mnet_allestimento.strip()
+
+                logger.info(
+                    "[AUTOSCOUT_MODEL_VERSION] alias=%s mnet=%s resolved=%s",
+                    alias_allestimento,
+                    mnet_allestimento,
+                    as24_model_version,
+                )
 
                 logger.info(
                     "[AUTOSCOUT_DEBUG_TECH] power=%s cyl_cap=%s cyl=%s weight=%s seats=%s doors=%s",
@@ -580,6 +600,8 @@ def autoscout_sync_job():
                     usatoin=usatoin,
                     as24_make_id=as24_make_id,
                     as24_model_id=as24_model_id,
+                    as24_model_version=as24_model_version,
+
                     as24_bodytype_id=as24_bodytype_id,
                     as24_primary_fuel_type=as24_primary_fuel_type,
                     as24_fuel_category=as24_fuel_category,
