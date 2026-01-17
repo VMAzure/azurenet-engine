@@ -672,6 +672,40 @@ def autoscout_sync_job():
 
             except Exception as exc:
                 session.rollback()
+                err_str = str(exc)
+
+                # ------------------------------------------------------------
+                # 🩹 RIPARAZIONE AUTOMATICA:
+                # listing cancellato su AS24 → serve CREATE, non PUT
+                # ------------------------------------------------------------
+                if "listing-does-not-exist" in err_str:
+                    logger.warning(
+                        "[AUTOSCOUT_REPAIR] Listing non esistente su AS24, forzo CREATE | listing_id=%s",
+                        listing_id,
+                    )
+
+                    session.execute(
+                        text("""
+                            UPDATE autoscout_listings
+                            SET
+                                status = 'PENDING_CREATE',
+                                listing_id = NULL,
+                                last_error = :error,
+                                requested_at = now(),
+                                retry_count = 0
+                            WHERE id = :id
+                        """),
+                        {
+                            "id": listing_id,
+                            "error": err_str,
+                        },
+                    )
+                    session.commit()
+                    continue
+
+                # ------------------------------------------------------------
+                # ❌ ERRORE GENERICO
+                # ------------------------------------------------------------
                 logger.exception(
                     "[AUTOSCOUT_CREATE] ERRORE su listing_id=%s",
                     listing_id,
@@ -689,7 +723,7 @@ def autoscout_sync_job():
                             WHERE id = :id
                         """),
                         {
-                            "error": str(exc),
+                            "error": err_str,
                             "now": datetime.utcnow(),
                             "id": listing_id,
                         },
@@ -703,6 +737,7 @@ def autoscout_sync_job():
                     )
 
                 continue
+
 
     except Exception:
         logger.exception("[AUTOSCOUT_CREATE] ERRORE FATALE JOB")
