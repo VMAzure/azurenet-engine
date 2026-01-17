@@ -93,12 +93,6 @@ def build_minimal_payload(
         "firstRegistrationDate": first_reg,
         "mileage": mileage,
 
-        # Fuel (risolto a monte, DB-driven)
-        "fuel": {
-            "primaryFuelType": as24_primary_fuel_type,
-            "fuelCategory": as24_fuel_category,
-        },
-
         # Transmission (AS24 enum, risolto a monte)
         "transmission": as24_transmission,
 
@@ -130,6 +124,9 @@ def build_minimal_payload(
     # -----------------------------
     # Dati tecnici veicolo
     # -----------------------------
+
+    payload["primaryFuelType"] = as24_primary_fuel_type
+    payload["fuelCategory"] = as24_fuel_category
 
     if as24_power is not None:
         payload["power"] = as24_power
