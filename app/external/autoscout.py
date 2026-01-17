@@ -149,7 +149,12 @@ def get_makes() -> dict:
     return resp.json()
 
 
-def update_listing_publication_status(customer_id: str, listing_id: str, status: str):
+def update_listing_publication_status(
+    customer_id: str,
+    listing_id: str,
+    status: str,
+    test_mode: bool = True,
+):
     """
     Aggiorna lo stato di pubblicazione del listing AS24.
     status: "Active" | "Inactive"
@@ -164,6 +169,8 @@ def update_listing_publication_status(customer_id: str, listing_id: str, status:
 
     headers = {
         "Content-Type": "application/json",
+        "X-Testmode": "true" if test_mode else "false",
+
     }
 
     logger.info(
@@ -186,19 +193,26 @@ def update_listing_publication_status(customer_id: str, listing_id: str, status:
         )
 
 
-def delete_listing(customer_id: str, listing_id: str):
+def delete_listing(
+    customer_id: str,
+    listing_id: str,
+    test_mode: bool = True,
+):
     """
     Elimina definitivamente un listing AutoScout24.
     """
+
     url = f"{AUTOSCOUT_BASE_URL}/customers/{customer_id}/listings/{listing_id}"
 
     headers = {
         "Accept": "application/json",
+        "X-Testmode": "true" if test_mode else "false",
     }
 
     logger.info(
-        "[AUTOSCOUT_HTTP] DELETE %s",
+        "[AUTOSCOUT_HTTP] DELETE %s (test_mode=%s)",
         url,
+        test_mode,
     )
 
     resp = requests.delete(
@@ -212,6 +226,7 @@ def delete_listing(customer_id: str, listing_id: str):
         raise AutoScoutClientError(
             f"DELETE listing failed | HTTP {resp.status_code} | body={resp.text}"
         )
+
 
 # ============================================================
 # POST /customers/{customerId}/images  (pre-upload image)
