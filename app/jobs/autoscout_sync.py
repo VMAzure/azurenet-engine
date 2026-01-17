@@ -100,11 +100,7 @@ def autoscout_sync_job():
 
                     session.execute(
                         text("""
-                            UPDATE autoscout_listings
-                            SET
-                                status = 'DELETED',
-                                last_attempt_at = now(),
-                                retry_count = 0
+                            DELETE FROM autoscout_listings
                             WHERE id = :id
                         """),
                         {"id": listing_id},
@@ -126,11 +122,7 @@ def autoscout_sync_job():
 
                 session.execute(
                     text("""
-                        UPDATE autoscout_listings
-                        SET
-                            status = 'DELETED',
-                            last_attempt_at = now(),
-                            retry_count = 0
+                        DELETE FROM autoscout_listings
                         WHERE id = :id
                     """),
                     {"id": listing_id},
