@@ -20,6 +20,8 @@ from app.jobs.usato import (
     sync_usato_dettagli,
 )
 
+from app.jobs.wltp_enrichment import wltp_enrichment_worker
+
 
 def schedule_nuovo_jobs(scheduler):
     # --------------------------------------------------
@@ -177,6 +179,21 @@ def schedule_autoscout_jobs(scheduler):
 
     logging.info("[SCHEDULER] AUTOSCOUT SYNC job registered")
 
+def schedule_wltp_jobs(scheduler):
+    # --------------------------------------------------
+    # WLTP — ARRICCHIMENTO NORMATIVA EURO (AUTO + VCOM)
+    # --------------------------------------------------
+
+    scheduler.add_job(
+        func=wltp_enrichment_worker,
+        trigger=CronTrigger(minute="*/10"),  # ogni 10 minuti
+        id="wltp_enrichment",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    logging.info("[SCHEDULER] WLTP enrichment job registered")
 
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -207,6 +224,10 @@ def build_scheduler():
     # Pubblica AS24    
     schedule_autoscout_jobs(scheduler)
     logging.info("[SCHEDULER] AUTOSCOUT jobs registered")
+
+    # registra WLTP (normativa euro)
+    schedule_wltp_jobs(scheduler)
+    logging.info("[SCHEDULER] WLTP jobs registered")
 
 
     return scheduler
