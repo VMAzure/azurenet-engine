@@ -1,5 +1,25 @@
 ﻿from datetime import date
 
+
+from datetime import date, datetime
+import re
+
+def normalize_year_month(value) -> str | None:
+    if value is None:
+        return None
+
+    if isinstance(value, (date, datetime)):
+        return f"{value.year}-{value.month:02d}"
+
+    if isinstance(value, str):
+        value = value.strip()
+        if re.match(r"^\d{4}-\d{2}$", value):
+            return value
+        raise ValueError(f"lastTechnicalServiceDate non valido: {value}")
+
+    raise ValueError(f"Tipo lastTechnicalServiceDate non supportato: {type(value)}")
+
+
 def build_minimal_payload(
     auto: dict,
     usatoin: dict,
@@ -149,8 +169,14 @@ def build_minimal_payload(
     if as24_door_count is not None:
         payload["doorCount"] = as24_door_count
 
+    print(as24_last_service_date, type(as24_last_service_date))
+
     if as24_last_service_date:
-        payload["lastTechnicalServiceDate"] = as24_last_service_date
+        payload["lastTechnicalServiceDate"] = normalize_year_month(
+            as24_last_service_date
+        )
+
+
 
     if as24_description:
         payload["description"] = as24_description
