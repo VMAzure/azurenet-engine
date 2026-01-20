@@ -1,8 +1,20 @@
-﻿from datetime import date
-
-
-from datetime import date, datetime
+﻿from datetime import date, datetime
 import re
+
+
+AS24_EURO_MAP = {
+    "EURO_1": "1",
+    "EURO_2": "2",
+    "EURO_3": "3",
+    "EURO_4": "4",
+    "EURO_5": "5",
+    "EURO_6": "6",
+    "EURO_6B": "11",
+    "EURO_6C": "7",
+    "EURO_6D": "8",
+    "EURO_6D_TEMP": "9",
+    "EURO_6E": "10",
+}
 
 def normalize_year_month(value) -> str | None:
     if value is None:
@@ -53,6 +65,7 @@ def build_minimal_payload(
     - transmission risolto a monte (AS24 enum)
 
     """
+   
 
     # -----------------------------
     # First registration YYYY-MM
@@ -145,6 +158,16 @@ def build_minimal_payload(
     # Dati tecnici veicolo
     # -----------------------------
 
+     # -----------------------------
+    # Normativa Euro (AutoScout24)
+    # -----------------------------
+    eu_directive = auto.get("eu_emission_directive")
+
+    if eu_directive and eu_directive != "ND":
+        as24_id = AS24_EURO_MAP.get(eu_directive)
+        if as24_id:
+            payload["euEmissionStandard"] = as24_id
+
     payload["primaryFuelType"] = as24_primary_fuel_type
     payload["fuelCategory"] = as24_fuel_category
 
@@ -169,14 +192,10 @@ def build_minimal_payload(
     if as24_door_count is not None:
         payload["doorCount"] = as24_door_count
 
-    print(as24_last_service_date, type(as24_last_service_date))
-
     if as24_last_service_date:
         payload["lastTechnicalServiceDate"] = normalize_year_month(
             as24_last_service_date
         )
-
-
 
     if as24_description:
         payload["description"] = as24_description
