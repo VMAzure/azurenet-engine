@@ -148,6 +148,8 @@ def autoscout_sync_job():
                 if not auto:
                     raise RuntimeError("Auto tecnica non trovata")
 
+                alloy_wheel_size = auto.get("alloy_wheel_size")
+
                 # ------------------------------------------------------------
                 # 3️⃣ Carica contesto commerciale (usatoin)
                 # ------------------------------------------------------------
@@ -611,7 +613,7 @@ def autoscout_sync_job():
 
                     # Equipment
                     as24_equipment_ids=as24_equipment_ids,
-
+                    alloy_wheel_size=alloy_wheel_size,
                     as24_has_full_service_history=as24_has_full_service_history,
                 )
 
