@@ -209,8 +209,14 @@ def build_minimal_payload(
     # -----------------------------
     # Cerchi in lega (AS24)
     # -----------------------------
-    if alloy_wheel_size is not None:
-        payload["rimsSize"] = int(alloy_wheel_size)
+    if (
+        alloy_wheel_size is not None
+        and as24_equipment_ids
+        and 15 in as24_equipment_ids  # AS24: Cerchi in lega
+    ):
+        payload["rimSize"] = int(alloy_wheel_size)
+
+
 
 
 
