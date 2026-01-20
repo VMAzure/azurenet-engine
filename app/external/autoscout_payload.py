@@ -52,6 +52,7 @@ def build_minimal_payload(
     as24_equipment_ids: list[int] | None,
     as24_has_full_service_history: bool | None,
     as24_model_version: str | None = None,
+    alloy_wheel_size: int | None = None,   
 
 ) -> dict:
 
@@ -205,6 +206,11 @@ def build_minimal_payload(
 
     if as24_has_full_service_history is not None:
         payload["hasFullServiceHistory"] = as24_has_full_service_history
+    # -----------------------------
+    # Cerchi in lega (AS24)
+    # -----------------------------
+    if alloy_wheel_size is not None:
+        payload["rimsSize"] = int(alloy_wheel_size)
 
 
 
