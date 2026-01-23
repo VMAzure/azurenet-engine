@@ -525,8 +525,14 @@ def autoscout_sync_job():
                     as24_has_full_service_history = True
                 elif cronologia_tagliandi is False:
                     as24_has_full_service_history = False
- 
 
+                # ------------------------------------------------------------
+                # 5.x️⃣ Resolve Warranty AS24 (mesi)
+                # ------------------------------------------------------------
+
+                as24_warranty_months = 12  # decisione commerciale dealer
+
+           
                 # ------------------------------------------------------------
                 # 5.10️⃣ Pre-upload immagini AS24 (C: dentro CREATE)
                 # ------------------------------------------------------------
@@ -644,8 +650,8 @@ def autoscout_sync_job():
                     as24_last_service_date=as24_last_service_date,
                     as24_description=as24_description,
                     as24_drivetrain=as24_drivetrain,
-
-
+                    as24_warranty_months=as24_warranty_months,
+                    
                     # Equipment
                     as24_equipment_ids=as24_equipment_ids,
                     alloy_wheel_size=alloy_wheel_size,

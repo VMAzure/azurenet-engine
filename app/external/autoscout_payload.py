@@ -54,6 +54,7 @@ def build_minimal_payload(
     as24_model_version: str | None = None,
     alloy_wheel_size: int | None = None,   
     as24_drivetrain: str | None = None,
+    as24_warranty_months: int | None = None,
 
 
 ) -> dict:
@@ -222,6 +223,13 @@ def build_minimal_payload(
         and 15 in as24_equipment_ids  # AS24: Cerchi in lega
     ):
         payload["alloyWheelSize"] = int(alloy_wheel_size)
+    
+    
+    # -----------------------------
+    # Warranty AS24 (mesi)
+    # -----------------------------
+    if as24_warranty_months and as24_warranty_months > 0:
+        payload["warranty"] = as24_warranty_months
 
 
 
