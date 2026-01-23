@@ -654,6 +654,7 @@ def autoscout_sync_job():
                     as24_make_id=as24_make_id,
                     as24_model_id=as24_model_id,
                     as24_model_version=as24_model_version,
+                    as24_previous_owner_count=as24_previous_owner_count,
 
                     as24_bodytype_id=as24_bodytype_id,
                     as24_primary_fuel_type=as24_primary_fuel_type,
