@@ -177,6 +177,8 @@ def autoscout_sync_job():
                     {"codice": auto["codice_motornet"]},
                 ).mappings().first()
 
+
+
                 if not det_base:
                     raise RuntimeError(
                         f"Dettagli Motornet non trovati (v_mnet_dettagli_unificati): codice={auto['codice_motornet']}"
@@ -402,6 +404,37 @@ def autoscout_sync_job():
                 if mapping["as24_vehicle_type"] == "X":
                     # AS24 reference: bodyType 7 = "Altro" è valido per X
                     as24_bodytype_id = 7
+                # ------------------------------------------------------------
+                # 5.6.y️⃣ Resolve Drivetrain AutoScout24 (from Motornet)
+                # ------------------------------------------------------------
+
+                def map_mnet_trazione_to_as24(trazione: str | None) -> str | None:
+                    if not trazione:
+                        return None
+
+                    return {
+                        "Anteriore": "F",
+                        "Posteriore": "R",
+                        "Integrale": "4",
+                    }.get(trazione)
+
+
+                as24_drivetrain = None
+
+                if mapping["as24_vehicle_type"] == "C":
+                    as24_drivetrain = map_mnet_trazione_to_as24(det_base.get("trazione"))
+
+                    if as24_drivetrain:
+                        logger.info(
+                            "[AUTOSCOUT_DRIVETRAIN] trazione MNET='%s' → AS24='%s'",
+                            det_base.get("trazione"),
+                            as24_drivetrain,
+                        )
+                    else:
+                        logger.info(
+                            "[AUTOSCOUT_DRIVETRAIN] trazione MNET='%s' non mappata → campo escluso",
+                            det_base.get("trazione"),
+                        )
 
                 # ------------------------------------------------------------
                 # 5.7️⃣ Resolve Fuel + Transmission AutoScout24 (solo C)
@@ -610,6 +643,8 @@ def autoscout_sync_job():
                     as24_door_count=as24_door_count,
                     as24_last_service_date=as24_last_service_date,
                     as24_description=as24_description,
+                    as24_drivetrain=as24_drivetrain,
+
 
                     # Equipment
                     as24_equipment_ids=as24_equipment_ids,

@@ -53,6 +53,8 @@ def build_minimal_payload(
     as24_has_full_service_history: bool | None,
     as24_model_version: str | None = None,
     alloy_wheel_size: int | None = None,   
+    as24_drivetrain: str | None = None,
+
 
 ) -> dict:
 
@@ -159,7 +161,7 @@ def build_minimal_payload(
     # Dati tecnici veicolo
     # -----------------------------
 
-     # -----------------------------
+    # -----------------------------
     # Normativa Euro (AutoScout24)
     # -----------------------------
     eu_directive = auto.get("eu_emission_directive")
@@ -206,6 +208,10 @@ def build_minimal_payload(
 
     if as24_has_full_service_history is not None:
         payload["hasFullServiceHistory"] = as24_has_full_service_history
+
+    if as24_drivetrain:
+        payload["drivetrain"] = as24_drivetrain
+
 
     # -----------------------------
     # Cerchi in lega (AS24)
