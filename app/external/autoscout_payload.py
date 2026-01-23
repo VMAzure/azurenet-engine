@@ -55,6 +55,8 @@ def build_minimal_payload(
     alloy_wheel_size: int | None = None,   
     as24_drivetrain: str | None = None,
     as24_warranty_months: int | None = None,
+    as24_previous_owner_count: int | None = None,
+
 
 
 ) -> dict:
@@ -212,6 +214,9 @@ def build_minimal_payload(
 
     if as24_drivetrain:
         payload["drivetrain"] = as24_drivetrain
+
+    if as24_previous_owner_count is not None:
+        payload["previousOwnerCount"] = as24_previous_owner_count
 
 
     # -----------------------------

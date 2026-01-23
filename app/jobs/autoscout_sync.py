@@ -531,6 +531,26 @@ def autoscout_sync_job():
                 # ------------------------------------------------------------
 
                 as24_warranty_months = 12  # decisione commerciale dealer
+                
+                # ------------------------------------------------------------
+                # 5.x️⃣ Resolve Previous Owner Count (AS24)
+                # ------------------------------------------------------------
+
+                as24_previous_owner_count = None
+
+                prev = auto.get("previous_owner_count")
+
+                if isinstance(prev, int) and 0 <= prev <= 99:
+                    as24_previous_owner_count = prev
+                    logger.info(
+                        "[AUTOSCOUT_PREV_OWNERS] previous_owner_count=%s",
+                        as24_previous_owner_count,
+                    )
+                else:
+                    logger.info(
+                        "[AUTOSCOUT_PREV_OWNERS] dato assente o non valido (%s) → campo escluso",
+                        prev,
+                    )
 
            
                 # ------------------------------------------------------------
