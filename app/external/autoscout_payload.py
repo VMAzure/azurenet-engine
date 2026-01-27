@@ -261,12 +261,8 @@ def build_minimal_payload(
     # Emissioni CO2 (AS24)
     # -------------------------------------------------
     if as24_co2 is not None:
-        payload["emissions"] = {
-            "co2Emission": {
-                "value": float(as24_co2),
-                "unit": "g/km",
-            }
-        }
+        payload["co2Emissions"] = int(as24_co2)
+
 
 
     # -------------------------------------------------
