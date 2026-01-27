@@ -268,6 +268,13 @@ def autoscout_sync_job():
                 # ------------------------------------------------------------
                 det_auto = None
 
+                as24_co2 = None
+                as24_consumo_urbano = None
+                as24_consumo_extraurbano = None
+                as24_consumo_medio = None
+                gear_count = None
+
+
                 if mapping["as24_vehicle_type"] == "C":
                     det_auto = session.execute(
                         text("""
@@ -281,12 +288,44 @@ def autoscout_sync_job():
                                 cilindri,
                                 peso_vuoto,
                                 posti,
-                                porte
+                                porte,
+                                emissioni_co2,
+                                consumo_urbano,
+                                consumo_extraurbano,
+                                consumo_medio,
+                                descrizione_marce
                             FROM mnet_dettagli_usato
                             WHERE codice_motornet_uni = :codice
                         """),
                         {"codice": auto["codice_motornet"]},
                     ).mappings().first()
+                    
+                    as24_co2 = None
+                    as24_consumo_urbano = None
+                    as24_consumo_extraurbano = None
+                    as24_consumo_medio = None
+
+                    if det_auto:
+                        if det_auto.get("emissioni_co2") is not None:
+                            as24_co2 = float(det_auto["emissioni_co2"])
+
+                        if det_auto.get("consumo_urbano") is not None:
+                            as24_consumo_urbano = float(det_auto["consumo_urbano"])
+
+                        if det_auto.get("consumo_extraurbano") is not None:
+                            as24_consumo_extraurbano = float(det_auto["consumo_extraurbano"])
+
+                        if det_auto.get("consumo_medio") is not None:
+                            as24_consumo_medio = float(det_auto["consumo_medio"])
+
+                        
+                    gear_count = None
+                    raw_marce = det_auto.get("descrizione_marce") if det_auto else None
+
+                    if raw_marce and str(raw_marce).isdigit():
+                        val = int(raw_marce)
+                        if 1 <= val <= 99:
+                            gear_count = val
 
                     if not det_auto:
                         raise RuntimeError(
@@ -698,6 +737,12 @@ def autoscout_sync_job():
                     as24_description=as24_description,
                     as24_drivetrain=as24_drivetrain,
                     as24_warranty_months=as24_warranty_months,
+
+                    as24_co2=as24_co2,
+                    as24_consumo_urbano=as24_consumo_urbano,
+                    as24_consumo_extraurbano=as24_consumo_extraurbano,
+                    as24_consumo_medio=as24_consumo_medio,
+                    gear_count=gear_count,
                     
                     # Equipment
                     as24_equipment_ids=as24_equipment_ids,

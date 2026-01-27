@@ -57,6 +57,12 @@ def build_minimal_payload(
     as24_warranty_months: int | None = None,
     as24_previous_owner_count: int | None = None,
     autoscout_attrs: dict | None = None,
+    as24_co2: float | None = None,
+    as24_consumo_urbano: float | None = None,
+    as24_consumo_extraurbano: float | None = None,
+    as24_consumo_medio: float | None = None,
+    gear_count: int | None = None,
+
 
 ) -> dict:
 
@@ -251,6 +257,41 @@ def build_minimal_payload(
         if autoscout_attrs.get("is_metallic") is not None:
             payload["isMetallic"] = autoscout_attrs["is_metallic"]
 
+    # -------------------------------------------------
+    # Emissioni CO2 (AS24)
+    # -------------------------------------------------
+    if as24_co2 is not None:
+        payload["emissions"] = {
+            "co2": float(as24_co2),
+            "unit": "g/km",
+        }
+
+    # -------------------------------------------------
+    # Consumi carburante (AS24)
+    # -------------------------------------------------
+    if (
+        as24_consumo_urbano is not None
+        or as24_consumo_extraurbano is not None
+        or as24_consumo_medio is not None
+    ):
+        payload["consumption"] = {
+            "unit": "l/100km",
+        }
+
+        if as24_consumo_urbano is not None:
+            payload["consumption"]["urban"] = float(as24_consumo_urbano)
+
+        if as24_consumo_extraurbano is not None:
+            payload["consumption"]["extraUrban"] = float(as24_consumo_extraurbano)
+
+        if as24_consumo_medio is not None:
+            payload["consumption"]["combined"] = float(as24_consumo_medio)
+
+    # -------------------------------------------------
+    # Numero marce (AS24)
+    # -------------------------------------------------
+    if gear_count is not None:
+        payload["gearCount"] = gear_count
 
 
     payload["condition"] = {
