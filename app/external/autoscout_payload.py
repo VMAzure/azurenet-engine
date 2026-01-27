@@ -239,7 +239,10 @@ def build_minimal_payload(
     # Warranty AS24 (mesi)
     # -----------------------------
     if as24_warranty_months and as24_warranty_months > 0:
-        payload["warranty"] = as24_warranty_months
+        payload["warranty"] = {
+            "duration": int(as24_warranty_months)
+        }
+
 
     # -------------------------------------------------
     # Colori / Interni / Vernice (AS24 - DB driven)
@@ -263,8 +266,6 @@ def build_minimal_payload(
     if as24_co2 is not None:
         payload["co2Emissions"] = int(as24_co2)
 
-
-
     # -------------------------------------------------
     # Consumi carburante (AS24)
     # -------------------------------------------------
@@ -273,18 +274,17 @@ def build_minimal_payload(
         or as24_consumo_extraurbano is not None
         or as24_consumo_medio is not None
     ):
-        payload["consumption"] = {
-            "unit": "l/100km",
-        }
+        payload["fuelConsumption"] = {}
 
         if as24_consumo_urbano is not None:
-            payload["consumption"]["urban"] = float(as24_consumo_urbano)
+            payload["fuelConsumption"]["urban"] = float(as24_consumo_urbano)
 
         if as24_consumo_extraurbano is not None:
-            payload["consumption"]["extraUrban"] = float(as24_consumo_extraurbano)
+            payload["fuelConsumption"]["extraUrban"] = float(as24_consumo_extraurbano)
 
         if as24_consumo_medio is not None:
-            payload["consumption"]["combined"] = float(as24_consumo_medio)
+            payload["fuelConsumption"]["combined"] = float(as24_consumo_medio)
+
 
     # -------------------------------------------------
     # Numero marce (AS24)
