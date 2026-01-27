@@ -239,10 +239,7 @@ def build_minimal_payload(
     # Warranty AS24 (mesi)
     # -----------------------------
     if as24_warranty_months and as24_warranty_months > 0:
-        payload["warranty"] = {
-            "duration": int(as24_warranty_months)
-        }
-
+        payload["warranty"] = as24_warranty_months
 
     # -------------------------------------------------
     # Colori / Interni / Vernice (AS24 - DB driven)
