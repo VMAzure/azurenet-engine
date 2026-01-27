@@ -56,8 +56,7 @@ def build_minimal_payload(
     as24_drivetrain: str | None = None,
     as24_warranty_months: int | None = None,
     as24_previous_owner_count: int | None = None,
-
-
+    autoscout_attrs: dict | None = None,
 
 ) -> dict:
 
@@ -236,11 +235,29 @@ def build_minimal_payload(
     if as24_warranty_months and as24_warranty_months > 0:
         payload["warranty"] = as24_warranty_months
 
+    # -------------------------------------------------
+    # Colori / Interni / Vernice (AS24 - DB driven)
+    # -------------------------------------------------
+    if autoscout_attrs:
+        if autoscout_attrs.get("as24_body_color_id") is not None:
+            payload["bodyColor"] = autoscout_attrs["as24_body_color_id"]
+
+        if autoscout_attrs.get("as24_upholstery_color_id") is not None:
+            payload["upholsteryColor"] = autoscout_attrs["as24_upholstery_color_id"]
+
+        if autoscout_attrs.get("as24_upholstery_type_code"):
+            payload["upholsteryType"] = autoscout_attrs["as24_upholstery_type_code"]
+
+        if autoscout_attrs.get("is_metallic") is not None:
+            payload["isMetallic"] = autoscout_attrs["is_metallic"]
 
 
 
     payload["condition"] = {
         "hadAccident": False
     }
+    # Nazionalità veicolo (decisione temporanea)
+    payload["countryVersion"] = "IT"
+
 
     return payload

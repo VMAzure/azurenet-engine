@@ -145,6 +145,22 @@ def autoscout_sync_job():
                     {"id_auto": id_auto},
                 ).mappings().first()
 
+                autoscout_attrs = session.execute(
+                    text("""
+                        SELECT
+                            as24_body_color_id,
+                            as24_upholstery_color_id,
+                            as24_upholstery_type_code,
+                            is_metallic
+                        FROM autoscout_vehicle_attributes
+                        WHERE id_auto = :id_auto
+                    """),
+                    {"id_auto": id_auto},
+                ).mappings().first()
+
+                autoscout_attrs = dict(autoscout_attrs) if autoscout_attrs else None
+
+
                 if not auto:
                     raise RuntimeError("Auto tecnica non trovata")
 
@@ -317,6 +333,15 @@ def autoscout_sync_job():
                     if last_service_date
                     else None
                 )
+                km_last_service = auto.get("km_ultimo_intervento")
+
+                if last_service_date and km_last_service is not None:
+                    logger.info(
+                        "[AUTOSCOUT_SERVICE] last_service_date=%s km=%s",
+                        last_service_date,
+                        km_last_service,
+                    )
+
 
                 description = usatoin.get("descrizione")
                 as24_description = description.strip() if description and description.strip() else None
@@ -441,10 +466,11 @@ def autoscout_sync_job():
                 # ------------------------------------------------------------
                 if mapping["as24_vehicle_type"] == "C":
 
-                    mnet_alimentazione = det_auto["alimentazione"]
+                    
+                    mnet_alimentazione = auto.get("alimentazione_override") or det_auto["alimentazione"]
 
                     if not mnet_alimentazione:
-                        raise RuntimeError("Alimentazione MNET mancante")
+                        raise RuntimeError("Alimentazione mancante (override + Motornet)")
 
                     fuel_row = session.execute(
                         text("""
@@ -676,6 +702,7 @@ def autoscout_sync_job():
                     # Equipment
                     as24_equipment_ids=as24_equipment_ids,
                     alloy_wheel_size=alloy_wheel_size,
+                    autoscout_attrs=autoscout_attrs,
                     as24_has_full_service_history=as24_has_full_service_history,
                 )
 
