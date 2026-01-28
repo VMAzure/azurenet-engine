@@ -63,6 +63,14 @@ def build_minimal_payload(
     as24_consumo_extraurbano: float | None = None,
     as24_consumo_medio: float | None = None,
     gear_count: int | None = None,
+    as24_gross_weight: int | None = None,
+    as24_payload: int | None = None,
+    as24_length: int | None = None,
+    as24_width: int | None = None,
+    as24_height: int | None = None,
+    as24_wheelbase: int | None = None,
+
+
 
 
 ) -> dict:
@@ -222,6 +230,37 @@ def build_minimal_payload(
     if as24_empty_weight is not None:
         payload["emptyWeight"] = as24_empty_weight
         payload["emptyWeightUnit"] = "kg"
+
+    # -----------------------------
+    # Pesi VIC (AS24)
+    # -----------------------------
+    if as24_gross_weight is not None:
+        payload["grossVehicleWeight"] = as24_gross_weight
+        payload["grossVehicleWeightUnit"] = "kg"
+
+    if as24_payload is not None:
+        payload["payload"] = as24_payload
+        payload["payloadUnit"] = "kg"
+
+    # -----------------------------
+    # Dimensioni veicolo (AS24)
+    # -----------------------------
+    if as24_length is not None:
+        payload["length"] = as24_length
+        payload["lengthUnit"] = "mm"
+
+    if as24_width is not None:
+        payload["width"] = as24_width
+        payload["widthUnit"] = "mm"
+
+    if as24_height is not None:
+        payload["height"] = as24_height
+        payload["heightUnit"] = "mm"
+
+    if as24_wheelbase is not None:
+        payload["wheelbase"] = as24_wheelbase
+        payload["wheelbaseUnit"] = "mm"
+
 
     if as24_seat_count is not None:
         payload["seatCount"] = as24_seat_count

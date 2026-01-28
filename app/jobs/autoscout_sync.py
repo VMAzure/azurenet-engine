@@ -28,6 +28,22 @@ BATCH_SIZE = 5
 # ============================================================
 # JOB: AUTOSCOUT CREATE (STEP B)
 # ============================================================
+def map_mnet_cambio_to_as24(cambio: str | None) -> str | None:
+    if not cambio:
+        return None
+
+    if cambio in ("Manuale", "Manuale sequenziale", "Sequenziale"):
+        return "M"
+
+    if cambio in (
+        "Automatico",
+        "Automatico sequenziale",
+        "Automatico doppia frizione",
+        "CVT",
+    ):
+        return "A"
+
+    return None
 
 def autoscout_sync_job():
     session = SessionLocal()
@@ -416,6 +432,18 @@ def autoscout_sync_job():
                         as24_empty_weight = _to_int(det_vic["peso_vuoto"])
                         as24_gross_weight = _to_int(det_vic["peso_totale_terra"])
                         as24_payload = _to_int(det_vic["portata"])
+                        as24_transmission = map_mnet_cambio_to_as24(
+                            det_vic["cambio_descrizione"]
+                        )
+                        as24_drivetrain = map_mnet_trazione_to_as24(
+                            det_vic["trazione_descrizione"]
+                        )
+                        as24_length = _to_int(det_vic["lunghezza"])
+                        as24_width = _to_int(det_vic["larghezza"])
+                        as24_height = _to_int(det_vic["altezza"])
+                        as24_wheelbase = _to_int(det_vic["passo"])
+
+
 
                         # campi stringa (ancora NON mappati AS24)
                         mnet_tipo_codice = det_vic["tipo_codice"]          # es. Van
@@ -779,9 +807,24 @@ def autoscout_sync_job():
                 # 5.8.1️⃣ Normalizzazione payload per vehicleType = X
                 # ------------------------------------------------------------
                 if mapping["as24_vehicle_type"] == "X":
-                    as24_primary_fuel_type = None
-                    as24_fuel_category = None
-                    as24_transmission = None
+                    fuel_row = session.execute(
+                        text("""
+                            SELECT
+                                as24_primary_fuel_type,
+                                as24_fuel_category
+                            FROM autoscout_fuel_map
+                            WHERE mnet_alimentazione = :alimentazione
+                        """),
+                        {
+                            "alimentazione": det_vic["alimentazione_codice"]
+                        },
+                    ).mappings().first()
+
+                    if fuel_row:
+                        as24_primary_fuel_type = fuel_row["as24_primary_fuel_type"]
+                        as24_fuel_category = fuel_row["as24_fuel_category"]
+
+                  
 
 
                 payload = build_minimal_payload(
@@ -815,6 +858,14 @@ def autoscout_sync_job():
                     as24_consumo_extraurbano=as24_consumo_extraurbano,
                     as24_consumo_medio=as24_consumo_medio,
                     gear_count=gear_count,
+                    as24_gross_weight=as24_gross_weight,
+                    as24_payload=as24_payload,
+                    as24_length=as24_length,
+                    as24_width=as24_width,
+                    as24_height=as24_height,
+                    as24_wheelbase=as24_wheelbase,
+
+
                     
                     # Equipment
                     as24_equipment_ids=as24_equipment_ids,
