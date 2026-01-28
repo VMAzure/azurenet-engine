@@ -447,7 +447,7 @@ def autoscout_sync_job():
                             FROM autoscout_fuel_map
                             WHERE mnet_alimentazione = :alimentazione
                         """),
-                        {"alimentazione": det_vic["alimentazione_codice"]},
+                        {"alimentazione": det_vic["alimentazione_descrizione"]}
                     ).mappings().first()
 
                     if fuel_row:
