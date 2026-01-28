@@ -45,6 +45,17 @@ def map_mnet_cambio_to_as24(cambio: str | None) -> str | None:
 
     return None
 
+def map_mnet_trazione_to_as24(trazione: str | None) -> str | None:
+    if not trazione:
+        return None
+
+    return {
+        "Anteriore": "F",
+        "Posteriore": "R",
+        "Integrale": "4",
+    }.get(trazione)
+
+
 def autoscout_sync_job():
     session = SessionLocal()
 
@@ -306,6 +317,13 @@ def autoscout_sync_job():
                 as24_empty_weight = None
                 as24_seat_count = None
                 as24_door_count = None
+                as24_gross_weight = None
+                as24_payload = None
+                as24_length = None
+                as24_width = None
+                as24_height = None
+                as24_wheelbase = None
+
                 # ------------------------------------------------------------
                 # 5.5️⃣ Arricchimento AUTO (obbligatorio per C)
                 # ------------------------------------------------------------
@@ -521,7 +539,7 @@ def autoscout_sync_job():
                 as24_bodytype_id = None
                 as24_primary_fuel_type = None
                 as24_fuel_category = None
-                as24_transmission = None
+                # as24_transmission già risolta sopra (AUTO o VIC)
 
                 
                 if mapping["as24_vehicle_type"] == "C":
@@ -571,15 +589,7 @@ def autoscout_sync_job():
                 # 5.6.y️⃣ Resolve Drivetrain AutoScout24 (from Motornet)
                 # ------------------------------------------------------------
 
-                def map_mnet_trazione_to_as24(trazione: str | None) -> str | None:
-                    if not trazione:
-                        return None
-
-                    return {
-                        "Anteriore": "F",
-                        "Posteriore": "R",
-                        "Integrale": "4",
-                    }.get(trazione)
+              
 
 
                 as24_drivetrain = None
