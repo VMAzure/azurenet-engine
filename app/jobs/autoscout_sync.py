@@ -245,9 +245,22 @@ def autoscout_sync_job():
 
                 as24_make_id = mapping["as24_make_id"]
                 as24_model_id = mapping["as24_model_id"]
+                vehicle_type = mapping["as24_vehicle_type"]
 
-                if not as24_make_id or not as24_model_id:
-                    raise RuntimeError("Mapping AutoScout24 incompleto (make/model)")
+                if vehicle_type == "C":
+                    if not as24_make_id or not as24_model_id:
+                        raise RuntimeError(
+                            "Mapping AutoScout24 incompleto (AUTO: make/model obbligatori)"
+                        )
+
+                elif vehicle_type == "X":
+                    if not as24_make_id or not as24_model_id:
+                        raise RuntimeError(
+                            "Mapping AutoScout24 incompleto (VIC: make/model obbligatori, mapping manuale FE)"
+                        )
+
+                else:
+                    raise RuntimeError("as24_vehicle_type non valido")
 
                 # ------------------------------------------------------------
                 # 5.2️⃣ Guardia coerenza catalog Motornet vs mapping AS24
@@ -262,7 +275,20 @@ def autoscout_sync_job():
                         "Mismatch Motornet catalog vs AS24 vehicle_type (atteso vic)"
                     )
 
-
+                def _to_int(val):
+                    try:
+                        if val is None:
+                            return None
+                        return int(str(val).strip())
+                    except (ValueError, TypeError):
+                        return None
+                
+                as24_power = None
+                as24_cylinder_capacity = None
+                as24_cylinder_count = None
+                as24_empty_weight = None
+                as24_seat_count = None
+                as24_door_count = None
                 # ------------------------------------------------------------
                 # 5.5️⃣ Arricchimento AUTO (obbligatorio per C)
                 # ------------------------------------------------------------
@@ -399,20 +425,7 @@ def autoscout_sync_job():
                 # ------------------------------------------------------------
                 # 5.6️⃣ Resolve dati tecnici veicolo (normalizzazione robusta)
                 # ------------------------------------------------------------
-                def _to_int(val):
-                    try:
-                        if val is None:
-                            return None
-                        return int(str(val).strip())
-                    except (ValueError, TypeError):
-                        return None
                 
-                as24_power = None
-                as24_cylinder_capacity = None
-                as24_cylinder_count = None
-                as24_empty_weight = None
-                as24_seat_count = None
-                as24_door_count = None
 
                 if mapping["as24_vehicle_type"] == "C":
 
@@ -771,6 +784,7 @@ def autoscout_sync_job():
 
 
                 payload = build_minimal_payload(
+                    vehicle_type=mapping["as24_vehicle_type"],
                     auto=auto,
                     usatoin=usatoin,
                     as24_make_id=as24_make_id,

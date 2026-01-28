@@ -33,6 +33,7 @@ def normalize_year_month(value) -> str | None:
 
 
 def build_minimal_payload(
+    vehicle_type: str,  # "C" | "X"
     auto: dict,
     usatoin: dict,
     as24_make_id: int,
@@ -76,7 +77,14 @@ def build_minimal_payload(
     - transmission risolto a monte (AS24 enum)
 
     """
-   
+    if vehicle_type not in ("C", "X"):
+        raise ValueError(f"vehicle_type non valido: {vehicle_type}")
+
+    if not as24_make_id or not as24_model_id:
+        raise ValueError(
+            f"Payload AS24 invalido: make/model mancanti (vehicleType={vehicle_type})"
+        )
+
 
     # -----------------------------
     # First registration YYYY-MM
@@ -127,7 +135,7 @@ def build_minimal_payload(
     # Payload finale
     # -----------------------------
     payload = {
-        "vehicleType": "C",
+        "vehicleType": vehicle_type,
         "offerType": "U",
 
         # ID AS24
