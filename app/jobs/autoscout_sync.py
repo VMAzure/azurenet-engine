@@ -340,6 +340,63 @@ def autoscout_sync_job():
                 )
 
                 # ------------------------------------------------------------
+                # 5️⃣ Arricchimento VIC (obbligatorio per X)
+                # ------------------------------------------------------------
+                det_vic = None
+
+                if mapping["as24_vehicle_type"] == "X":
+                    det_vic = session.execute(
+                        text("""
+                            SELECT
+                                tipo_codice,
+                                tipo_descrizione,
+                                categoria_codice,
+                                categoria_descrizione,
+                                cilindrata,
+                                hp,
+                                kw,
+                                alimentazione_codice,
+                                alimentazione_descrizione,
+                                cambio_codice,
+                                cambio_descrizione,
+                                trazione_codice,
+                                trazione_descrizione,
+                                lunghezza,
+                                larghezza,
+                                altezza,
+                                passo,
+                                porte,
+                                posti,
+                                peso_vuoto,
+                                peso_totale_terra,
+                                portata
+                            FROM mnet_vcom_dettagli
+                            WHERE codice_motornet_uni = :codice
+                        """),
+                        {"codice": auto["codice_motornet"]},
+                    ).mappings().first()
+
+                    if not det_vic:
+                        raise RuntimeError(
+                            f"Dettagli VIC mancanti (mnet_vcom_dettagli): codice={auto['codice_motornet']}"
+                        )
+                    if mapping["as24_vehicle_type"] == "X":
+
+                        as24_power = _to_int(det_vic["kw"])
+                        as24_cylinder_capacity = _to_int(det_vic["cilindrata"])
+                        as24_seat_count = _to_int(det_vic["posti"])
+                        as24_door_count = _to_int(det_vic["porte"])
+                        as24_empty_weight = _to_int(det_vic["peso_vuoto"])
+                        as24_gross_weight = _to_int(det_vic["peso_totale_terra"])
+                        as24_payload = _to_int(det_vic["portata"])
+
+                        # campi stringa (ancora NON mappati AS24)
+                        mnet_tipo_codice = det_vic["tipo_codice"]          # es. Van
+                        mnet_alimentazione = det_vic["alimentazione_codice"]  # es. B
+                        mnet_cambio = det_vic["cambio_codice"]              # es. M
+                        mnet_trazione = det_vic["trazione_codice"]          # es. I
+
+                # ------------------------------------------------------------
                 # 5.6️⃣ Resolve dati tecnici veicolo (normalizzazione robusta)
                 # ------------------------------------------------------------
                 def _to_int(val):
