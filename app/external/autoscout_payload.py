@@ -77,8 +77,14 @@ def build_minimal_payload(
     - transmission risolto a monte (AS24 enum)
 
     """
-    if vehicle_type not in ("C", "X"):
-        raise ValueError(f"vehicle_type non valido: {vehicle_type}")
+    if vehicle_type == "C":
+        if not as24_make_id or not as24_model_id:
+            raise ValueError("Payload AS24 invalido (AUTO: make/model)")
+
+    elif vehicle_type == "X":
+        if not as24_make_id:
+            raise ValueError("Payload AS24 invalido (VIC: make mancante)")
+
 
     if not as24_make_id or not as24_model_id:
         raise ValueError(
@@ -140,13 +146,10 @@ def build_minimal_payload(
 
         # ID AS24
         "make": as24_make_id,
-        "model": as24_model_id,
 
         "firstRegistrationDate": first_reg,
         "mileage": mileage,
 
-        # Transmission (AS24 enum, risolto a monte)
-        "transmission": as24_transmission,
 
         # Availability (congelata)
         "availability": {
@@ -170,8 +173,24 @@ def build_minimal_payload(
             "channels": [{"id": "AS24"}],
         },
     }
+    if vehicle_type == "C":
+        payload["model"] = as24_model_id
+
+
+    elif vehicle_type == "X":
+        # AS24 richiede modelName per X
+        if not as24_model_version:
+            raise ValueError(
+                "modelName obbligatorio per vehicleType=X (VIC)"
+            )
+        payload["modelName"] = as24_model_version
+
     if as24_model_version:
         payload["modelVersion"] = as24_model_version
+    
+    # Transmission (AS24 enum, risolto a monte)
+    if as24_transmission is not None:
+        payload["transmission"] = as24_transmission
 
     # -----------------------------
     # Dati tecnici veicolo
@@ -187,8 +206,12 @@ def build_minimal_payload(
         if as24_id:
             payload["euEmissionStandard"] = as24_id
 
-    payload["primaryFuelType"] = as24_primary_fuel_type
-    payload["fuelCategory"] = as24_fuel_category
+    if as24_primary_fuel_type is not None:
+        payload["primaryFuelType"] = as24_primary_fuel_type
+
+    if as24_fuel_category is not None:
+        payload["fuelCategory"] = as24_fuel_category
+
 
     if as24_power is not None:
         payload["power"] = as24_power

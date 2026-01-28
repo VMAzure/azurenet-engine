@@ -254,10 +254,11 @@ def autoscout_sync_job():
                         )
 
                 elif vehicle_type == "X":
-                    if not as24_make_id or not as24_model_id:
+                    if not as24_make_id:
                         raise RuntimeError(
-                            "Mapping AutoScout24 incompleto (VIC: make/model obbligatori, mapping manuale FE)"
+                            "Mapping AutoScout24 incompleto (VIC: make obbligatorio)"
                         )
+
 
                 else:
                     raise RuntimeError("as24_vehicle_type non valido")
