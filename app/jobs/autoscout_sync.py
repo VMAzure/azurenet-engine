@@ -323,6 +323,8 @@ def autoscout_sync_job():
                 as24_width = None
                 as24_height = None
                 as24_wheelbase = None
+                as24_primary_fuel_type = None
+                as24_fuel_category = None
 
                 # ------------------------------------------------------------
                 # 5.5️⃣ Arricchimento AUTO (obbligatorio per C)
@@ -449,7 +451,11 @@ def autoscout_sync_job():
                         as24_door_count = _to_int(det_vic["porte"])
                         as24_empty_weight = _to_int(det_vic["peso_vuoto"])
                         as24_gross_weight = _to_int(det_vic["peso_totale_terra"])
-                        as24_payload = _to_int(det_vic["portata"])
+                        as24_payload = (
+                            int(float(det_vic["portata"]) * 1000)
+                            if det_vic.get("portata") is not None
+                            else None
+                        )
                         as24_transmission = map_mnet_cambio_to_as24(
                             det_vic["cambio_descrizione"]
                         )
@@ -537,8 +543,7 @@ def autoscout_sync_job():
                 # 5.6️⃣ Resolve bodyType AutoScout24 (DB-driven, production-safe)
                 # ------------------------------------------------------------
                 as24_bodytype_id = None
-                as24_primary_fuel_type = None
-                as24_fuel_category = None
+              
                 # as24_transmission già risolta sopra (AUTO o VIC)
 
                 
