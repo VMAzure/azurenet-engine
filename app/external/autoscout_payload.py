@@ -86,12 +86,6 @@ def build_minimal_payload(
             raise ValueError("Payload AS24 invalido (VIC: make mancante)")
 
 
-    if not as24_make_id or not as24_model_id:
-        raise ValueError(
-            f"Payload AS24 invalido: make/model mancanti (vehicleType={vehicle_type})"
-        )
-
-
     # -----------------------------
     # First registration YYYY-MM
     # -----------------------------
@@ -175,6 +169,9 @@ def build_minimal_payload(
     }
     if vehicle_type == "C":
         payload["model"] = as24_model_id
+        if as24_model_version:
+            payload["modelVersion"] = as24_model_version
+
 
 
     elif vehicle_type == "X":
@@ -185,8 +182,6 @@ def build_minimal_payload(
             )
         payload["modelName"] = as24_model_version
 
-    if as24_model_version:
-        payload["modelVersion"] = as24_model_version
     
     # Transmission (AS24 enum, risolto a monte)
     if as24_transmission is not None:
