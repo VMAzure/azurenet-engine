@@ -232,6 +232,13 @@ def build_minimal_payload(
         payload["emptyWeightUnit"] = "kg"
 
     # -----------------------------
+    # Portata massima (AS24 - VIC)
+    # -----------------------------
+    if as24_payload is not None:
+        payload["maxPayload"] = as24_payload
+
+
+    # -----------------------------
     # Pesi VIC (AS24)
     # -----------------------------
     if as24_gross_weight is not None:
