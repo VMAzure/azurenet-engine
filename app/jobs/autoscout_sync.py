@@ -439,6 +439,22 @@ def autoscout_sync_job():
                         {"codice": auto["codice_motornet"]},
                     ).mappings().first()
 
+                    fuel_row = session.execute(
+                        text("""
+                            SELECT
+                                as24_primary_fuel_type,
+                                as24_fuel_category
+                            FROM autoscout_fuel_map
+                            WHERE mnet_alimentazione = :alimentazione
+                        """),
+                        {"alimentazione": det_vic["alimentazione_codice"]},
+                    ).mappings().first()
+
+                    if fuel_row:
+                        as24_primary_fuel_type = fuel_row["as24_primary_fuel_type"]
+                        as24_fuel_category = fuel_row["as24_fuel_category"]
+
+
                     if not det_vic:
                         raise RuntimeError(
                             f"Dettagli VIC mancanti (mnet_vcom_dettagli): codice={auto['codice_motornet']}"
@@ -594,10 +610,6 @@ def autoscout_sync_job():
                 # 5.6.y️⃣ Resolve Drivetrain AutoScout24 (from Motornet)
                 # ------------------------------------------------------------
 
-              
-
-
-                as24_drivetrain = None
 
                 if mapping["as24_vehicle_type"] == "C":
                     as24_drivetrain = map_mnet_trazione_to_as24(det_base.get("trazione"))
@@ -818,28 +830,14 @@ def autoscout_sync_job():
                         )
                         continue
 
-                # ------------------------------------------------------------
-                # 5.8.1️⃣ Normalizzazione payload per vehicleType = X
-                # ------------------------------------------------------------
-                if mapping["as24_vehicle_type"] == "X":
-                    fuel_row = session.execute(
-                        text("""
-                            SELECT
-                                as24_primary_fuel_type,
-                                as24_fuel_category
-                            FROM autoscout_fuel_map
-                            WHERE mnet_alimentazione = :alimentazione
-                        """),
-                        {
-                            "alimentazione": det_vic["alimentazione_codice"]
-                        },
-                    ).mappings().first()
+                logger.info(
+                    "[AUTOSCOUT_FINAL] type=%s fuel=%s cat=%s payload=%s",
+                    vehicle_type,
+                    as24_primary_fuel_type,
+                    as24_fuel_category,
+                    as24_payload,
+                )
 
-                    if fuel_row:
-                        as24_primary_fuel_type = fuel_row["as24_primary_fuel_type"]
-                        as24_fuel_category = fuel_row["as24_fuel_category"]
-
-                  
 
 
                 payload = build_minimal_payload(
