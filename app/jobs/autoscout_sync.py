@@ -465,8 +465,16 @@ def autoscout_sync_job():
                         as24_cylinder_capacity = _to_int(det_vic["cilindrata"])
                         as24_seat_count = _to_int(det_vic["posti"])
                         as24_door_count = _to_int(det_vic["porte"])
-                        as24_empty_weight = _to_int(det_vic["peso_vuoto"])
-                        as24_gross_weight = _to_int(det_vic["peso_totale_terra"])
+                        as24_empty_weight = (
+                            int(float(det_vic["peso_vuoto"]) * 100)
+                            if det_vic.get("peso_vuoto") is not None
+                            else None
+                        )
+                        as24_gross_weight = (
+                            int(float(det_vic["peso_totale_terra"]) * 100)
+                            if det_vic.get("peso_totale_terra") is not None
+                            else None
+                        )
                         as24_payload = (
                             int(float(det_vic["portata"]) * 1000)
                             if det_vic.get("portata") is not None
