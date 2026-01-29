@@ -635,11 +635,45 @@ def autoscout_sync_job():
                         )
     
                 # ------------------------------------------------------------
-                # 5.6.1️⃣ BodyType AutoScout24 per VIC (vehicleType = X)
+                # 5.6.1️⃣ Resolve BodyType AutoScout24 per VIC (vehicleType = X)
                 # ------------------------------------------------------------
                 if mapping["as24_vehicle_type"] == "X":
-                    # AS24 reference: bodyType 7 = "Altro" è valido per X
-                    as24_bodytype_id = 7
+
+                    mnet_tipo = det_vic.get("tipo_descrizione")
+
+                    if not mnet_tipo:
+                        logger.warning(
+                            "[AUTOSCOUT_BODYTYPE] tipo_descrizione VIC mancante → fallback Altro | codice=%s",
+                            auto["codice_motornet"],
+                        )
+                        as24_bodytype_id = 7
+                    else:
+                        bodytype_row = session.execute(
+                            text("""
+                                SELECT as24_bodytype_id
+                                FROM public.autoscout_bodytype_map
+                                WHERE mnet_tipo = :mnet_tipo
+                                  AND vehicle_type = 'X'
+                            """),
+                            {"mnet_tipo": mnet_tipo},
+                        ).mappings().first()
+
+                        if bodytype_row:
+                            as24_bodytype_id = bodytype_row["as24_bodytype_id"]
+                        else:
+                            logger.warning(
+                                "[AUTOSCOUT_BODYTYPE] BodyType VIC non mappato → fallback Altro | tipo=%s codice=%s",
+                                mnet_tipo,
+                                auto["codice_motornet"],
+                            )
+                            as24_bodytype_id = 7
+
+                    logger.info(
+                        "[AUTOSCOUT_BODYTYPE] VIC tipo='%s' → AS24 bodyType=%s",
+                        mnet_tipo,
+                        as24_bodytype_id,
+                    )
+
                 # ------------------------------------------------------------
                 # 5.6.y️⃣ Resolve Drivetrain AutoScout24 (from Motornet)
                 # ------------------------------------------------------------
