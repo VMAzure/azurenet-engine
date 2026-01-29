@@ -36,6 +36,14 @@ def normalize_sliding_door_equipment(equipment_ids: list[int]) -> list[int]:
 
     return list(ids)
 
+def _cm_to_mm(val):
+    try:
+        if val is None:
+            return None
+        return int(float(val) * 10)
+    except (ValueError, TypeError):
+        return None
+
 
 def normalize_climate_control_equipment(equipment_ids: list[int]) -> list[int]:
     """
@@ -538,6 +546,10 @@ def autoscout_sync_job():
                     as24_empty_weight = _to_int(det_auto["peso_vuoto"])
                     as24_seat_count = _to_int(det_auto["posti"])
                     as24_door_count = _to_int(det_auto["porte"])
+                    as24_length = _cm_to_mm(det_auto.get("lunghezza"))
+                    as24_width  = _cm_to_mm(det_auto.get("larghezza"))
+                    as24_height = _cm_to_mm(det_auto.get("altezza"))
+                    as24_wheelbase = _cm_to_mm(det_auto.get("passo"))
 
                 last_service_date = auto.get("data_ultimo_intervento")
                 as24_last_service_date = (
