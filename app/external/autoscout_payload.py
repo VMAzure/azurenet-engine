@@ -222,7 +222,7 @@ def build_minimal_payload(
 
     if as24_cylinder_capacity is not None:
         payload["cylinderCapacity"] = as24_cylinder_capacity
-        payload["cylinderCapacityUnit"] = "m3"
+        payload["cylinderCapacityUnit"] = "cm3"
 
     if as24_cylinder_count is not None:
         payload["cylinderCount"] = as24_cylinder_count
@@ -261,15 +261,15 @@ def build_minimal_payload(
     # -----------------------------
     if as24_length is not None:
         payload["length"] = as24_length
-        payload["lengthUnit"] = "mm"
+        payload["lengthUnit"] = "cm"
 
     if as24_width is not None:
         payload["width"] = as24_width
-        payload["widthUnit"] = "mm"
+        payload["widthUnit"] = "cm"
 
     if as24_height is not None:
         payload["height"] = as24_height
-        payload["heightUnit"] = "mm"
+        payload["heightUnit"] = "cm"
 
     if as24_wheelbase is not None:
         payload["wheelbase"] = as24_wheelbase
