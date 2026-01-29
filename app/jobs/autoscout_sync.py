@@ -24,6 +24,32 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 5 
 
+def normalize_sliding_door_equipment(equipment_ids: list[int]) -> list[int]:
+    """
+    Regola AS24:
+    - 152 (Sliding door generic) NON può coesistere con 244/245
+    """
+    ids = set(equipment_ids)
+
+    if 244 in ids or 245 in ids:
+        ids.discard(152)
+
+    return list(ids)
+
+
+def normalize_climate_control_equipment(equipment_ids: list[int]) -> list[int]:
+    """
+    Regola AS24:
+    - 30 = clima automatico generico
+    - 241/242/243 = clima automatico specifico per zone
+    """
+    ids = set(equipment_ids)
+    specific = {241, 242, 243}
+
+    if ids & specific:
+        ids.discard(30)
+
+    return list(ids)
 
 # ============================================================
 # JOB: AUTOSCOUT CREATE (STEP B)
@@ -700,6 +726,10 @@ def autoscout_sync_job():
                 ).fetchall()
 
                 as24_equipment_ids = [row[0] for row in equipment_rows]
+
+                # 🔒 NORMALIZZAZIONE AS24 (OBBLIGATORIA)
+                as24_equipment_ids = normalize_sliding_door_equipment(as24_equipment_ids)
+                as24_equipment_ids = normalize_climate_control_equipment(as24_equipment_ids)
 
                 if not as24_equipment_ids:
                     logger.info(
