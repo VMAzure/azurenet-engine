@@ -177,7 +177,7 @@ def autoscout_sync_job():
                 FROM autoscout_listings
                 WHERE status IN (
                     'PENDING_CREATE',
-                    'UPDATE_REQUIRED',
+                    'UPDATE_REQUIRED'
                 )
                 ORDER BY requested_at
                 FOR UPDATE SKIP LOCKED
