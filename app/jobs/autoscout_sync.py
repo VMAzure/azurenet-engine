@@ -93,6 +93,80 @@ def map_mnet_trazione_to_as24(trazione: str | None) -> str | None:
 def autoscout_sync_job():
     session = SessionLocal()
 
+    # ============================================================
+    # 0️⃣ DELETE_REQUIRED — PRIORITÀ ASSOLUTA
+    # ============================================================
+
+    delete_listings = session.execute(
+        text("""
+            SELECT *
+            FROM autoscout_listings
+            WHERE status = 'DELETE_REQUIRED'
+            ORDER BY requested_at
+            FOR UPDATE SKIP LOCKED
+            LIMIT :limit
+        """),
+        {"limit": BATCH_SIZE},
+    ).mappings().all()
+
+    for listing in delete_listings:
+        listing_id = listing["id"]
+        dealer_id = listing["dealer_id"]
+        id_auto = listing["id_auto"]
+
+        logger.info(
+            "[AUTOSCOUT_DELETE] Preso record | listing_id=%s dealer_id=%s id_auto=%s",
+            listing_id,
+            dealer_id,
+            id_auto,
+        )
+
+        config = session.execute(
+            text("""
+                SELECT *
+                FROM autoscout_dealer_config
+                WHERE dealer_id = :dealer_id
+                  AND enabled = true
+            """),
+            {"dealer_id": dealer_id},
+        ).mappings().first()
+
+        if not config:
+            logger.error(
+                "[AUTOSCOUT_DELETE] Config dealer mancante | dealer_id=%s",
+                dealer_id,
+            )
+            session.execute(
+                text("DELETE FROM autoscout_listings WHERE id = :id"),
+                {"id": listing_id},
+            )
+            session.commit()
+            continue
+
+        customer_id = resolve_customer_id(config["customer_id"])
+        listing_id_remote = listing.get("listing_id")
+
+        if listing_id_remote:
+            try:
+                delete_listing(
+                    customer_id=customer_id,
+                    listing_id=listing_id_remote,
+                    test_mode=config["test_mode"],
+                )
+            except AutoScoutClientError as exc:
+                logger.warning(
+                    "[AUTOSCOUT_DELETE] DELETE non confermato AS24 | listing_id=%s | err=%s",
+                    listing_id_remote,
+                    exc,
+                )
+
+        session.execute(
+            text("DELETE FROM autoscout_listings WHERE id = :id"),
+            {"id": listing_id},
+        )
+        session.commit()
+
+
     try:
         # ------------------------------------------------------------
         # 1️⃣ Preleva batch record in PENDING_CREATE (lock-safe)
@@ -104,7 +178,6 @@ def autoscout_sync_job():
                 WHERE status IN (
                     'PENDING_CREATE',
                     'UPDATE_REQUIRED',
-                    'DELETE_REQUIRED'
                 )
                 ORDER BY requested_at
                 FOR UPDATE SKIP LOCKED
@@ -175,12 +248,20 @@ def autoscout_sync_job():
                     config["test_mode"],
                 )
 
-                delete_listing(
-                    customer_id=customer_id,
-                    listing_id=listing_id_remote,
-                    test_mode=config["test_mode"],
-                )
+                try:
+                    delete_listing(
+                        customer_id=customer_id,
+                        listing_id=listing_id_remote,
+                        test_mode=config["test_mode"],
+                    )
+                except AutoScoutClientError as exc:
+                    logger.warning(
+                        "[AUTOSCOUT_DELETE] DELETE non confermato AS24, ma considero completato | listing_id=%s | err=%s",
+                        listing_id_remote,
+                        exc,
+                    )
 
+                # SEMPRE rimuovere il record locale
                 session.execute(
                     text("""
                         DELETE FROM autoscout_listings
@@ -191,6 +272,7 @@ def autoscout_sync_job():
 
                 session.commit()
                 continue
+
 
 
             try:
@@ -1064,12 +1146,14 @@ def autoscout_sync_job():
                                 requested_at = now(),
                                 retry_count = 0
                             WHERE id = :id
+                              AND status != 'DELETE_REQUIRED'
                         """),
                         {
                             "id": listing_id,
                             "error": err_str,
                         },
                     )
+
                     session.commit()
                     continue
 
