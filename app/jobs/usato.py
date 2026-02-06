@@ -324,150 +324,162 @@ def to_bool(v):
 async def _sync_usato_dettagli_async(db, codici):
     processed = 0
     inserted = 0
-    updated = 0
     seen = len(codici)
 
     for codice in codici:
+        retry = 0
+
+        while True:
+            try:
+                data = await motornet_get(
+                    f"{USATO_DETTAGLIO_URL}?codice_motornet={codice}"
+                )
+
+                modello = data.get("modello")
+                if not modello:
+                    break  # codice valido ma senza modello → vai avanti
+
+                res = db.execute(
+                    text("""
+                        INSERT INTO mnet_dettagli_usato (
+                            codice_motornet_uni, modello, allestimento, immagine,
+                            codice_costruttore, codice_motore,
+                            prezzo_listino, prezzo_accessori, data_listino,
+                            marca_nome, marca_acronimo,
+                            gamma_codice, gamma_descrizione, gruppo_storico, serie_gamma,
+                            categoria, segmento, tipo,
+                            tipo_motore, descrizione_motore, euro, cilindrata, cavalli_fiscali, hp, kw,
+                            emissioni_co2, consumo_urbano, consumo_extraurbano, consumo_medio,
+                            accelerazione, velocita,
+                            descrizione_marce, cambio, trazione, passo,
+                            porte, posti, altezza, larghezza, lunghezza,
+                            bagagliaio, pneumatici_anteriori, pneumatici_posteriori,
+                            coppia, numero_giri, cilindri, valvole, peso, peso_vuoto,
+                            massa_p_carico, portata, tipo_guida, neo_patentati,
+                            alimentazione, architettura, ricarica_standard, ricarica_veloce,
+                            sospensioni_pneumatiche, emissioni_urbe, emissioni_extraurb, descrizione_breve,
+                            peso_potenza, volumi, ridotte, paese_prod
+                        )
+                        SELECT
+                            :codice, :modello, :allestimento, :immagine,
+                            :codice_costruttore, :codice_motore,
+                            :prezzo_listino, :prezzo_accessori, :data_listino,
+                            :marca_nome, :marca_acronimo,
+                            :gamma_codice, :gamma_descrizione, :gruppo_storico, :serie_gamma,
+                            :categoria, :segmento, :tipo,
+                            :tipo_motore, :descrizione_motore, :euro, :cilindrata, :cavalli_fiscali, :hp, :kw,
+                            :emissioni_co2, :consumo_urbano, :consumo_extraurbano, :consumo_medio,
+                            :accelerazione, :velocita,
+                            :descrizione_marce, :cambio, :trazione, :passo,
+                            :porte, :posti, :altezza, :larghezza, :lunghezza,
+                            :bagagliaio, :pneumatici_anteriori, :pneumatici_posteriori,
+                            :coppia, :numero_giri, :cilindri, :valvole, :peso, :peso_vuoto,
+                            :massa_p_carico, :portata, :tipo_guida, :neo_patentati,
+                            :alimentazione, :architettura, :ricarica_standard, :ricarica_veloce,
+                            :sospensioni_pneumatiche, :emissioni_urbe, :emissioni_extraurb, :descrizione_breve,
+                            :peso_potenza, :volumi, :ridotte, :paese_prod
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM mnet_dettagli_usato
+                            WHERE codice_motornet_uni = :codice
+                        )
+                    """),
+                    {
+                        "codice": codice,
+                        "modello": modello.get("modello"),
+                        "allestimento": modello.get("allestimento"),
+                        "immagine": modello.get("immagine"),
+                        "codice_costruttore": modello.get("codiceCostruttore"),
+                        "codice_motore": modello.get("codiceMotore"),
+                        "prezzo_listino": modello.get("prezzoListino"),
+                        "prezzo_accessori": modello.get("prezzoAccessori"),
+                        "data_listino": modello.get("dataListino"),
+                        "marca_nome": (modello.get("marca") or {}).get("nome"),
+                        "marca_acronimo": (modello.get("marca") or {}).get("acronimo"),
+                        "gamma_codice": (modello.get("gammaModello") or {}).get("codice"),
+                        "gamma_descrizione": (modello.get("gammaModello") or {}).get("descrizione"),
+                        "gruppo_storico": (modello.get("gruppoStorico") or {}).get("descrizione"),
+                        "serie_gamma": (modello.get("serieGamma") or {}).get("descrizione"),
+                        "categoria": (modello.get("categoria") or {}).get("descrizione"),
+                        "segmento": (modello.get("segmento") or {}).get("descrizione"),
+                        "tipo": (modello.get("tipo") or {}).get("descrizione"),
+                        "tipo_motore": modello.get("tipoMotore"),
+                        "descrizione_motore": modello.get("descrizioneMotore"),
+                        "euro": modello.get("euro"),
+                        "cilindrata": modello.get("cilindrata"),
+                        "cavalli_fiscali": modello.get("cavalliFiscali"),
+                        "hp": modello.get("hp"),
+                        "kw": modello.get("kw"),
+                        "emissioni_co2": to_float_or_none(modello.get("emissioniCo2")),
+                        "consumo_urbano": to_float_or_none(modello.get("consumoUrbano")),
+                        "consumo_extraurbano": to_float_or_none(modello.get("consumoExtraurbano")),
+                        "consumo_medio": to_float_or_none(modello.get("consumoMedio")),
+                        "accelerazione": to_float_or_none(modello.get("accelerazione")),
+                        "velocita": modello.get("velocita"),
+                        "descrizione_marce": modello.get("descrizioneMarce"),
+                        "cambio": (modello.get("cambio") or {}).get("descrizione"),
+                        "trazione": (modello.get("trazione") or {}).get("descrizione"),
+                        "passo": modello.get("passo"),
+                        "porte": modello.get("porte"),
+                        "posti": modello.get("posti"),
+                        "altezza": modello.get("altezza"),
+                        "larghezza": modello.get("larghezza"),
+                        "lunghezza": modello.get("lunghezza"),
+                        "bagagliaio": modello.get("bagagliaio"),
+                        "pneumatici_anteriori": modello.get("pneumaticiAnteriori"),
+                        "pneumatici_posteriori": modello.get("pneumaticiPosteriori"),
+                        "coppia": modello.get("coppia"),
+                        "numero_giri": modello.get("numeroGiri"),
+                        "cilindri": modello.get("cilindri"),
+                        "valvole": modello.get("valvole"),
+                        "peso": modello.get("peso"),
+                        "peso_vuoto": modello.get("pesoVuoto"),
+                        "massa_p_carico": modello.get("massaPCarico"),
+                        "portata": modello.get("portata"),
+                        "tipo_guida": modello.get("tipoGuida"),
+                        "neo_patentati": to_bool(modello.get("neoPatentati")),
+                        "alimentazione": (modello.get("alimentazione") or {}).get("descrizione"),
+                        "architettura": (modello.get("architettura") or {}).get("descrizione"),
+                        "ricarica_standard": to_bool(modello.get("ricaricaStandard")),
+                        "ricarica_veloce": to_bool(modello.get("ricaricaVeloce")),
+                        "sospensioni_pneumatiche": to_bool(modello.get("sospPneum")),
+                        "emissioni_urbe": to_float_or_none(modello.get("emissUrbe")),
+                        "emissioni_extraurb": to_float_or_none(modello.get("emissExtraurb")),
+                        "descrizione_breve": modello.get("descrizioneBreve"),
+                        "peso_potenza": modello.get("pesoPotenza"),
+                        "volumi": modello.get("volumi"),
+                        "ridotte": to_bool(modello.get("ridotte")),
+                        "paese_prod": modello.get("paeseProd"),
+                    },
+                )
+
+                if res.rowcount == 1:
+                    inserted += 1
+
+                break  # SUCCESSO → esci dal while
+
+            except RuntimeError as e:
+                if "429" in str(e):
+                    retry += 1
+                    wait = min(30 * retry, 300)
+                    logger.warning(
+                        "[USATO][DETTAGLI] 429 su %s → retry %d (sleep %ds)",
+                        codice, retry, wait
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise  # errore reale → fallo emergere
+
         processed += 1
 
         if processed % 100 == 0:
             logger.info(
                 "[USATO][DETTAGLI] progress %d / %d (%.1f%%)",
-                processed,
-                seen,
-                processed * 100 / seen,
+                processed, seen, processed * 100 / seen
             )
 
-        try:
-            data = await motornet_get(
-                f"{USATO_DETTAGLIO_URL}?codice_motornet={codice}"
-            )
+    return processed, inserted, 0
 
-            modello = data.get("modello")
-            if not modello:
-                continue
-
-            res = db.execute(
-                text("""
-                    INSERT INTO mnet_dettagli_usato (
-                        codice_motornet_uni, modello, allestimento, immagine,
-                        codice_costruttore, codice_motore,
-                        prezzo_listino, prezzo_accessori, data_listino,
-                        marca_nome, marca_acronimo,
-                        gamma_codice, gamma_descrizione, gruppo_storico, serie_gamma,
-                        categoria, segmento, tipo,
-                        tipo_motore, descrizione_motore, euro, cilindrata, cavalli_fiscali, hp, kw,
-                        emissioni_co2, consumo_urbano, consumo_extraurbano, consumo_medio,
-                        accelerazione, velocita,
-                        descrizione_marce, cambio, trazione, passo,
-                        porte, posti, altezza, larghezza, lunghezza,
-                        bagagliaio, pneumatici_anteriori, pneumatici_posteriori,
-                        coppia, numero_giri, cilindri, valvole, peso, peso_vuoto,
-                        massa_p_carico, portata, tipo_guida, neo_patentati,
-                        alimentazione, architettura, ricarica_standard, ricarica_veloce,
-                        sospensioni_pneumatiche, emissioni_urbe, emissioni_extraurb, descrizione_breve,
-                        peso_potenza, volumi, ridotte, paese_prod
-                    )
-                    SELECT
-                        :codice, :modello, :allestimento, :immagine,
-                        :codice_costruttore, :codice_motore,
-                        :prezzo_listino, :prezzo_accessori, :data_listino,
-                        :marca_nome, :marca_acronimo,
-                        :gamma_codice, :gamma_descrizione, :gruppo_storico, :serie_gamma,
-                        :categoria, :segmento, :tipo,
-                        :tipo_motore, :descrizione_motore, :euro, :cilindrata, :cavalli_fiscali, :hp, :kw,
-                        :emissioni_co2, :consumo_urbano, :consumo_extraurbano, :consumo_medio,
-                        :accelerazione, :velocita,
-                        :descrizione_marce, :cambio, :trazione, :passo,
-                        :porte, :posti, :altezza, :larghezza, :lunghezza,
-                        :bagagliaio, :pneumatici_anteriori, :pneumatici_posteriori,
-                        :coppia, :numero_giri, :cilindri, :valvole, :peso, :peso_vuoto,
-                        :massa_p_carico, :portata, :tipo_guida, :neo_patentati,
-                        :alimentazione, :architettura, :ricarica_standard, :ricarica_veloce,
-                        :sospensioni_pneumatiche, :emissioni_urbe, :emissioni_extraurb, :descrizione_breve,
-                        :peso_potenza, :volumi, :ridotte, :paese_prod
-                    WHERE NOT EXISTS (
-                        SELECT 1
-                        FROM mnet_dettagli_usato
-                        WHERE codice_motornet_uni = :codice
-                    )
-                """),
-                {
-                    "codice": codice,
-                    "modello": modello.get("modello"),
-                    "allestimento": modello.get("allestimento"),
-                    "immagine": modello.get("immagine"),
-                    "codice_costruttore": modello.get("codiceCostruttore"),
-                    "codice_motore": modello.get("codiceMotore"),
-                    "prezzo_listino": modello.get("prezzoListino"),
-                    "prezzo_accessori": modello.get("prezzoAccessori"),
-                    "data_listino": modello.get("dataListino"),
-                    "marca_nome": (modello.get("marca") or {}).get("nome"),
-                    "marca_acronimo": (modello.get("marca") or {}).get("acronimo"),
-                    "gamma_codice": (modello.get("gammaModello") or {}).get("codice"),
-                    "gamma_descrizione": (modello.get("gammaModello") or {}).get("descrizione"),
-                    "gruppo_storico": (modello.get("gruppoStorico") or {}).get("descrizione"),
-                    "serie_gamma": (modello.get("serieGamma") or {}).get("descrizione"),
-                    "categoria": (modello.get("categoria") or {}).get("descrizione"),
-                    "segmento": (modello.get("segmento") or {}).get("descrizione"),
-                    "tipo": (modello.get("tipo") or {}).get("descrizione"),
-                    "tipo_motore": modello.get("tipoMotore"),
-                    "descrizione_motore": modello.get("descrizioneMotore"),
-                    "euro": modello.get("euro"),
-                    "cilindrata": modello.get("cilindrata"),
-                    "cavalli_fiscali": modello.get("cavalliFiscali"),
-                    "hp": modello.get("hp"),
-                    "kw": modello.get("kw"),
-                    "emissioni_co2": to_float_or_none(modello.get("emissioniCo2")),
-                    "consumo_urbano": to_float_or_none(modello.get("consumoUrbano")),
-                    "consumo_extraurbano": to_float_or_none(modello.get("consumoExtraurbano")),
-                    "consumo_medio": to_float_or_none(modello.get("consumoMedio")),
-                    "accelerazione": to_float_or_none(modello.get("accelerazione")),
-                    "velocita": modello.get("velocita"),
-                    "descrizione_marce": modello.get("descrizioneMarce"),
-                    "cambio": (modello.get("cambio") or {}).get("descrizione"),
-                    "trazione": (modello.get("trazione") or {}).get("descrizione"),
-                    "passo": modello.get("passo"),
-                    "porte": modello.get("porte"),
-                    "posti": modello.get("posti"),
-                    "altezza": modello.get("altezza"),
-                    "larghezza": modello.get("larghezza"),
-                    "lunghezza": modello.get("lunghezza"),
-                    "bagagliaio": modello.get("bagagliaio"),
-                    "pneumatici_anteriori": modello.get("pneumaticiAnteriori"),
-                    "pneumatici_posteriori": modello.get("pneumaticiPosteriori"),
-                    "coppia": modello.get("coppia"),
-                    "numero_giri": modello.get("numeroGiri"),
-                    "cilindri": modello.get("cilindri"),
-                    "valvole": modello.get("valvole"),
-                    "peso": modello.get("peso"),
-                    "peso_vuoto": modello.get("pesoVuoto"),
-                    "massa_p_carico": modello.get("massaPCarico"),
-                    "portata": modello.get("portata"),
-                    "tipo_guida": modello.get("tipoGuida"),
-                    "neo_patentati": to_bool(modello.get("neoPatentati")),
-                    "alimentazione": (modello.get("alimentazione") or {}).get("descrizione"),
-                    "architettura": (modello.get("architettura") or {}).get("descrizione"),
-                    "ricarica_standard": to_bool(modello.get("ricaricaStandard")),
-                    "ricarica_veloce": to_bool(modello.get("ricaricaVeloce")),
-                    "sospensioni_pneumatiche": to_bool(modello.get("sospPneum")),
-                    "emissioni_urbe": to_float_or_none(modello.get("emissUrbe")),
-                    "emissioni_extraurb": to_float_or_none(modello.get("emissExtraurb")),
-                    "descrizione_breve": modello.get("descrizioneBreve"),
-                    "peso_potenza": modello.get("pesoPotenza"),
-                    "volumi": modello.get("volumi"),
-                    "ridotte": to_bool(modello.get("ridotte")),
-                    "paese_prod": modello.get("paeseProd"),
-                },
-            )
-
-            if res.rowcount == 1:
-                inserted += 1
-
-        except Exception:
-            logger.exception("[USATO][DETTAGLI] FAILED %s", codice)
-
-    return processed, inserted, updated
 
 def sync_usato_dettagli():
     logger.info("[USATO][DETTAGLI] START")
