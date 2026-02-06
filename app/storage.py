@@ -38,3 +38,22 @@ def upload_bytes_and_get_public_url(
         r.raise_for_status()
 
     return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
+
+def download_bytes(
+    bucket: str,
+    path: str,
+) -> bytes:
+    """
+    Download diretto da Supabase Storage via REST API.
+    Ritorna i bytes del file.
+    """
+    download_url = f"{SUPABASE_URL}/storage/v1/object/{bucket}/{path}"
+
+    headers = {
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+    }
+
+    with httpx.Client(timeout=60) as client:
+        r = client.get(download_url, headers=headers)
+        r.raise_for_status()
+        return r.content

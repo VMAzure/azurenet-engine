@@ -291,60 +291,88 @@ def sync_usato_allestimenti():
 # ============================================================
 # USATO → DETTAGLI (DELTA-ONLY)
 # ============================================================
+def to_float_or_none(v):
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        v = v.strip()
+        # accetta solo numeri tipo "123" o "123.4"
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    return None
 
 def sync_usato_dettagli():
     logger.info("[USATO][DETTAGLI] START")
 
+    # === APERTURA UNICA SESSIONE DB ===
     with DBSession() as db:
+
+        # --- CARICAMENTO CODICI ---
         rows = db.execute(
             text("""
-                SELECT a.codice_motornet_uni
+                SELECT DISTINCT a.codice_motornet_uni
                 FROM mnet_allestimenti_usato a
                 JOIN mnet_anni_usato y
                   ON y.marca_acronimo = a.acronimo_marca
-                LEFT JOIN mnet_dettagli_usato d
-                  ON d.codice_motornet_uni = a.codice_motornet_uni
-                WHERE d.codice_motornet_uni IS NULL
-                  AND y.anno >= EXTRACT(YEAR FROM CURRENT_DATE) - 1
+                WHERE y.anno >= EXTRACT(YEAR FROM CURRENT_DATE) - 1
                 ORDER BY a.codice_motornet_uni
-
             """)
         ).fetchall()
 
-    codici = [r[0] for r in rows]
-    if not codici:
-        logging.info("[USATO][DETTAGLI] NOTHING TO DO")
-        return
+        codici = [r[0] for r in rows]
+        if not codici:
+            logger.info("[USATO][DETTAGLI] NOTHING TO DO")
+            return
 
-    seen = len(codici)
-    inserted = 0
+        seen = len(codici)
+        inserted = 0
+        processed = 0
+        updated = 0
 
-    for codice in codici:
-        try:
-            data = asyncio.run(
-                motornet_get(
-                    f"{USATO_DETTAGLIO_URL}?codice_motornet={codice}"
+        # --- FUNZIONE LOCALE ---
+        def to_bool(v):
+            if v is None:
+                return None
+            if isinstance(v, bool):
+                return v
+            if isinstance(v, int):
+                return v == 1
+            if isinstance(v, str):
+                v = v.strip().lower()
+                if v in ("1", "true", "t", "s", "si", "yes"):
+                    return True
+                if v in ("0", "false", "f", "n", "no", ""):
+                    return False
+            return None
+
+        # === LOOP PRINCIPALE (NESSUN ALTRO with DBSession) ===
+        for codice in codici:
+            processed += 1
+
+            if processed % 100 == 0:
+                logger.info(
+                    "[USATO][DETTAGLI] progress %d / %d (%.1f%%)",
+                    processed,
+                    seen,
+                    processed * 100 / seen,
                 )
-            )
-            modello = data.get("modello")
-            if not modello:
-                continue
 
-            with DBSession() as db:
-                def to_bool(v):
-                    if v is None:
-                        return None
-                    if isinstance(v, bool):
-                        return v
-                    if isinstance(v, int):
-                        return v == 1
-                    if isinstance(v, str):
-                        v = v.strip().lower()
-                        if v in ("1", "true", "t", "s", "si", "yes"):
-                            return True
-                        if v in ("0", "false", "f", "n", "no", ""):
-                            return False
-                    return None
+            try:
+                data = asyncio.run(
+                    motornet_get(
+                        f"{USATO_DETTAGLIO_URL}?codice_motornet={codice}"
+                    )
+                )
+                modello = data.get("modello")
+                if not modello:
+                    continue
+
+                # === DA QUI RIPARTI CON IL TUO INSERT INTO mnet_dettagli_usato (
+
                 res = db.execute(
                     text("""
                         INSERT INTO mnet_dettagli_usato (
@@ -465,9 +493,7 @@ def sync_usato_dettagli():
                     "cavalli_fiscali": modello.get("cavalliFiscali"),
                     "hp": modello.get("hp"),
                     "kw": modello.get("kw"),
-                    "emissioni_co2": modello.get("emissioniCo2")
-                        if modello.get("emissioniCo2") not in ("", None) else None,
-
+                    "emissioni_co2": to_float_or_none(modello.get("emissioniCo2")),
                     "consumo_urbano": modello.get("consumoUrbano")
                         if modello.get("consumoUrbano") not in ("", None) else None,
 
@@ -519,18 +545,47 @@ def sync_usato_dettagli():
                     "ridotte": to_bool(modello.get("ridotte")),
                     "paese_prod": modello.get("paeseProd"),
                 },
-            )
+                )
 
-            if res.rowcount == 1:
-                inserted += 1
+                if res.rowcount == 1:
+                    inserted += 1
 
-        except Exception:
-            logging.exception("[USATO][DETTAGLI] FAILED %s", codice)
-            continue
+                # --- RIALLINEAMENTO CODICE COSTRUTTORE (SE DIVERSO) ---
+                codice_costruttore = modello.get("codiceCostruttore")
 
-    logger.info(
-        "[USATO][DETTAGLI] DONE (new=%d, total_missing_seen=%d)",
-        inserted,
-        seen,
-    )
+                if codice_costruttore and str(codice_costruttore).strip():
+                    res_upd = db.execute(
+                        text("""
+                            UPDATE mnet_dettagli_usato
+                            SET codice_costruttore = CAST(:codice_costruttore AS varchar)
+                            WHERE codice_motornet_uni = CAST(:codice AS varchar)
+                              AND codice_costruttore IS DISTINCT FROM CAST(:codice_costruttore AS varchar)
+                        """),
+                        {
+                            "codice": codice,
+                            "codice_costruttore": codice_costruttore,
+                        },
+                    )
+
+                    if res_upd.rowcount == 1:
+                        updated += 1
+                        logger.info(
+                            "[USATO][DETTAGLI] UPDATE %s → %s",
+                            codice,
+                            codice_costruttore,
+                        )
+
+            except Exception:
+                logger.exception("[USATO][DETTAGLI] FAILED %s", codice)
+                continue
+
+        # === COMMIT FINALE (UNA SOLA VOLTA) ===
+        db.commit()
+
+        logger.info(
+            "[USATO][DETTAGLI] DONE processed=%d new=%d updated=%d",
+            processed,
+            inserted,
+            updated,
+        )
 
