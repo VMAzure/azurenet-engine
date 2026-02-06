@@ -298,173 +298,98 @@ def to_float_or_none(v):
         return float(v)
     if isinstance(v, str):
         v = v.strip()
-        # accetta solo numeri tipo "123" o "123.4"
         try:
             return float(v)
         except ValueError:
             return None
     return None
 
-def sync_usato_dettagli():
-    logger.info("[USATO][DETTAGLI] START")
 
-    # === APERTURA UNICA SESSIONE DB ===
-    with DBSession() as db:
+def to_bool(v):
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, int):
+        return v == 1
+    if isinstance(v, str):
+        v = v.strip().lower()
+        if v in ("1", "true", "t", "s", "si", "yes"):
+            return True
+        if v in ("0", "false", "f", "n", "no", ""):
+            return False
+    return None
 
-        # --- CARICAMENTO CODICI ---
-        rows = db.execute(
-            text("""
-                SELECT DISTINCT a.codice_motornet_uni
-                FROM mnet_allestimenti_usato a
-                JOIN mnet_anni_usato y
-                  ON y.marca_acronimo = a.acronimo_marca
-                WHERE y.anno >= EXTRACT(YEAR FROM CURRENT_DATE) - 1
-                ORDER BY a.codice_motornet_uni
-            """)
-        ).fetchall()
 
-        codici = [r[0] for r in rows]
-        if not codici:
-            logger.info("[USATO][DETTAGLI] NOTHING TO DO")
-            return
+async def _sync_usato_dettagli_async(db, codici):
+    processed = 0
+    inserted = 0
+    updated = 0
+    seen = len(codici)
 
-        seen = len(codici)
-        inserted = 0
-        processed = 0
-        updated = 0
+    for codice in codici:
+        processed += 1
 
-        # --- FUNZIONE LOCALE ---
-        def to_bool(v):
-            if v is None:
-                return None
-            if isinstance(v, bool):
-                return v
-            if isinstance(v, int):
-                return v == 1
-            if isinstance(v, str):
-                v = v.strip().lower()
-                if v in ("1", "true", "t", "s", "si", "yes"):
-                    return True
-                if v in ("0", "false", "f", "n", "no", ""):
-                    return False
-            return None
+        if processed % 100 == 0:
+            logger.info(
+                "[USATO][DETTAGLI] progress %d / %d (%.1f%%)",
+                processed,
+                seen,
+                processed * 100 / seen,
+            )
 
-        # === LOOP PRINCIPALE (NESSUN ALTRO with DBSession) ===
-        for codice in codici:
-            processed += 1
+        try:
+            data = await motornet_get(
+                f"{USATO_DETTAGLIO_URL}?codice_motornet={codice}"
+            )
 
-            if processed % 100 == 0:
-                logger.info(
-                    "[USATO][DETTAGLI] progress %d / %d (%.1f%%)",
-                    processed,
-                    seen,
-                    processed * 100 / seen,
-                )
+            modello = data.get("modello")
+            if not modello:
+                continue
 
-            try:
-                data = asyncio.run(
-                    motornet_get(
-                        f"{USATO_DETTAGLIO_URL}?codice_motornet={codice}"
+            res = db.execute(
+                text("""
+                    INSERT INTO mnet_dettagli_usato (
+                        codice_motornet_uni, modello, allestimento, immagine,
+                        codice_costruttore, codice_motore,
+                        prezzo_listino, prezzo_accessori, data_listino,
+                        marca_nome, marca_acronimo,
+                        gamma_codice, gamma_descrizione, gruppo_storico, serie_gamma,
+                        categoria, segmento, tipo,
+                        tipo_motore, descrizione_motore, euro, cilindrata, cavalli_fiscali, hp, kw,
+                        emissioni_co2, consumo_urbano, consumo_extraurbano, consumo_medio,
+                        accelerazione, velocita,
+                        descrizione_marce, cambio, trazione, passo,
+                        porte, posti, altezza, larghezza, lunghezza,
+                        bagagliaio, pneumatici_anteriori, pneumatici_posteriori,
+                        coppia, numero_giri, cilindri, valvole, peso, peso_vuoto,
+                        massa_p_carico, portata, tipo_guida, neo_patentati,
+                        alimentazione, architettura, ricarica_standard, ricarica_veloce,
+                        sospensioni_pneumatiche, emissioni_urbe, emissioni_extraurb, descrizione_breve,
+                        peso_potenza, volumi, ridotte, paese_prod
                     )
-                )
-                modello = data.get("modello")
-                if not modello:
-                    continue
-
-                # === DA QUI RIPARTI CON IL TUO INSERT INTO mnet_dettagli_usato (
-
-                res = db.execute(
-                    text("""
-                        INSERT INTO mnet_dettagli_usato (
-                            codice_motornet_uni, modello, allestimento, immagine,
-                            codice_costruttore, codice_motore,
-                            prezzo_listino, prezzo_accessori, data_listino,
-                            marca_nome, marca_acronimo,
-                            gamma_codice, gamma_descrizione, gruppo_storico, serie_gamma,
-                            categoria, segmento, tipo,
-                            tipo_motore, descrizione_motore, euro, cilindrata, cavalli_fiscali, hp, kw,
-                            emissioni_co2, consumo_urbano, consumo_extraurbano, consumo_medio,
-                            accelerazione, velocita,
-                            descrizione_marce, cambio, trazione, passo,
-                            porte, posti, altezza, larghezza, lunghezza,
-                            bagagliaio, pneumatici_anteriori, pneumatici_posteriori,
-                            coppia, numero_giri, cilindri, valvole, peso, peso_vuoto,
-                            massa_p_carico, portata, tipo_guida, neo_patentati,
-                            alimentazione, architettura, ricarica_standard, ricarica_veloce,
-                            sospensioni_pneumatiche, emissioni_urbe, emissioni_extraurb, descrizione_breve,
-                            peso_potenza, volumi, ridotte, paese_prod
-                        )
-                        SELECT
-                            CAST(:codice AS varchar),
-                            CAST(:modello AS varchar),
-                            CAST(:allestimento AS varchar),
-                            CAST(:immagine AS varchar),
-                            CAST(:codice_costruttore AS varchar),
-                            CAST(:codice_motore AS varchar),
-                            CAST(:prezzo_listino AS float),
-                            CAST(:prezzo_accessori AS float),
-                            CAST(:data_listino AS date),
-                            CAST(:marca_nome AS varchar),
-                            CAST(:marca_acronimo AS varchar),
-                            CAST(:gamma_codice AS varchar),
-                            CAST(:gamma_descrizione AS varchar),
-                            CAST(:gruppo_storico AS varchar),
-                            CAST(:serie_gamma AS varchar),
-                            CAST(:categoria AS varchar),
-                            CAST(:segmento AS varchar),
-                            CAST(:tipo AS varchar),
-                            CAST(:tipo_motore AS varchar),
-                            CAST(:descrizione_motore AS varchar),
-                            CAST(:euro AS varchar),
-                            CAST(:cilindrata AS int),
-                            CAST(:cavalli_fiscali AS int),
-                            CAST(:hp AS int),
-                            CAST(:kw AS int),
-                            CAST(:emissioni_co2 AS float),
-                            CAST(:consumo_urbano AS float),
-                            CAST(:consumo_extraurbano AS float),
-                            CAST(:consumo_medio AS float),
-                            CAST(:accelerazione AS float),
-                            CAST(:velocita AS int),
-                            CAST(:descrizione_marce AS varchar),
-                            CAST(:cambio AS varchar),
-                            CAST(:trazione AS varchar),
-                            CAST(:passo AS int),
-                            CAST(:porte AS int),
-                            CAST(:posti AS int),
-                            CAST(:altezza AS int),
-                            CAST(:larghezza AS int),
-                            CAST(:lunghezza AS int),
-                            CAST(:bagagliaio AS varchar),
-                            CAST(:pneumatici_anteriori AS varchar),
-                            CAST(:pneumatici_posteriori AS varchar),
-                            CAST(:coppia AS varchar),
-                            CAST(:numero_giri AS int),
-                            CAST(:cilindri AS varchar),
-                            CAST(:valvole AS int),
-                            CAST(:peso AS int),
-                            CAST(:peso_vuoto AS varchar),
-                            CAST(:massa_p_carico AS varchar),
-                            CAST(:portata AS int),
-                            CAST(:tipo_guida AS varchar),
-                            CAST(:neo_patentati AS boolean),
-                            CAST(:alimentazione AS varchar),
-                            CAST(:architettura AS varchar),
-                            CAST(:ricarica_standard AS boolean),
-                            CAST(:ricarica_veloce AS boolean),
-                            CAST(:sospensioni_pneumatiche AS boolean),
-                            CAST(:emissioni_urbe AS float),
-                            CAST(:emissioni_extraurb AS float),
-                            CAST(:descrizione_breve AS varchar),
-                            CAST(:peso_potenza AS varchar),
-                            CAST(:volumi AS varchar),
-                            CAST(:ridotte AS boolean),
-                            CAST(:paese_prod AS varchar)
-                                  
+                    SELECT
+                        :codice, :modello, :allestimento, :immagine,
+                        :codice_costruttore, :codice_motore,
+                        :prezzo_listino, :prezzo_accessori, :data_listino,
+                        :marca_nome, :marca_acronimo,
+                        :gamma_codice, :gamma_descrizione, :gruppo_storico, :serie_gamma,
+                        :categoria, :segmento, :tipo,
+                        :tipo_motore, :descrizione_motore, :euro, :cilindrata, :cavalli_fiscali, :hp, :kw,
+                        :emissioni_co2, :consumo_urbano, :consumo_extraurbano, :consumo_medio,
+                        :accelerazione, :velocita,
+                        :descrizione_marce, :cambio, :trazione, :passo,
+                        :porte, :posti, :altezza, :larghezza, :lunghezza,
+                        :bagagliaio, :pneumatici_anteriori, :pneumatici_posteriori,
+                        :coppia, :numero_giri, :cilindri, :valvole, :peso, :peso_vuoto,
+                        :massa_p_carico, :portata, :tipo_guida, :neo_patentati,
+                        :alimentazione, :architettura, :ricarica_standard, :ricarica_veloce,
+                        :sospensioni_pneumatiche, :emissioni_urbe, :emissioni_extraurb, :descrizione_breve,
+                        :peso_potenza, :volumi, :ridotte, :paese_prod
                     WHERE NOT EXISTS (
                         SELECT 1
                         FROM mnet_dettagli_usato
-                        WHERE codice_motornet_uni = CAST(:codice AS varchar)
+                        WHERE codice_motornet_uni = :codice
                     )
                 """),
                 {
@@ -494,18 +419,10 @@ def sync_usato_dettagli():
                     "hp": modello.get("hp"),
                     "kw": modello.get("kw"),
                     "emissioni_co2": to_float_or_none(modello.get("emissioniCo2")),
-                    "consumo_urbano": modello.get("consumoUrbano")
-                        if modello.get("consumoUrbano") not in ("", None) else None,
-
-                    "consumo_extraurbano": modello.get("consumoExtraurbano")
-                        if modello.get("consumoExtraurbano") not in ("", None) else None,
-
-                    "consumo_medio": modello.get("consumoMedio")
-                        if modello.get("consumoMedio") not in ("", None) else None,
-
-                    "accelerazione": modello.get("accelerazione")
-                        if modello.get("accelerazione") not in ("", None) else None,
-
+                    "consumo_urbano": to_float_or_none(modello.get("consumoUrbano")),
+                    "consumo_extraurbano": to_float_or_none(modello.get("consumoExtraurbano")),
+                    "consumo_medio": to_float_or_none(modello.get("consumoMedio")),
+                    "accelerazione": to_float_or_none(modello.get("accelerazione")),
                     "velocita": modello.get("velocita"),
                     "descrizione_marce": modello.get("descrizioneMarce"),
                     "cambio": (modello.get("cambio") or {}).get("descrizione"),
@@ -517,18 +434,15 @@ def sync_usato_dettagli():
                     "larghezza": modello.get("larghezza"),
                     "lunghezza": modello.get("lunghezza"),
                     "bagagliaio": modello.get("bagagliaio"),
-                    "pneumatici_anteriori": modello.get("pneumaticiAnteriori")
-                        if isinstance(modello.get("pneumaticiAnteriori"), (str, int, float)) else None,
-
-                    "pneumatici_posteriori": modello.get("pneumaticiPosteriori")
-                        if isinstance(modello.get("pneumaticiPosteriori"), (str, int, float)) else None,
+                    "pneumatici_anteriori": modello.get("pneumaticiAnteriori"),
+                    "pneumatici_posteriori": modello.get("pneumaticiPosteriori"),
                     "coppia": modello.get("coppia"),
                     "numero_giri": modello.get("numeroGiri"),
                     "cilindri": modello.get("cilindri"),
                     "valvole": modello.get("valvole"),
                     "peso": modello.get("peso"),
-                    "peso_vuoto": modello.get("pesoVuoto") if isinstance(modello.get("pesoVuoto"), (str, int, float)) else None,
-                    "massa_p_carico": modello.get("massaPCarico") if isinstance(modello.get("massaPCarico"), (str, int, float)) else None,
+                    "peso_vuoto": modello.get("pesoVuoto"),
+                    "massa_p_carico": modello.get("massaPCarico"),
                     "portata": modello.get("portata"),
                     "tipo_guida": modello.get("tipoGuida"),
                     "neo_patentati": to_bool(modello.get("neoPatentati")),
@@ -537,49 +451,48 @@ def sync_usato_dettagli():
                     "ricarica_standard": to_bool(modello.get("ricaricaStandard")),
                     "ricarica_veloce": to_bool(modello.get("ricaricaVeloce")),
                     "sospensioni_pneumatiche": to_bool(modello.get("sospPneum")),
-                    "emissioni_urbe": modello.get("emissUrbe"),
-                    "emissioni_extraurb": modello.get("emissExtraurb"),
+                    "emissioni_urbe": to_float_or_none(modello.get("emissUrbe")),
+                    "emissioni_extraurb": to_float_or_none(modello.get("emissExtraurb")),
                     "descrizione_breve": modello.get("descrizioneBreve"),
                     "peso_potenza": modello.get("pesoPotenza"),
-                    "volumi": modello.get("volumi") if isinstance(modello.get("volumi"), (str, int, float)) else None,
+                    "volumi": modello.get("volumi"),
                     "ridotte": to_bool(modello.get("ridotte")),
                     "paese_prod": modello.get("paeseProd"),
                 },
-                )
+            )
 
-                if res.rowcount == 1:
-                    inserted += 1
+            if res.rowcount == 1:
+                inserted += 1
 
-                # --- RIALLINEAMENTO CODICE COSTRUTTORE (SE DIVERSO) ---
-                codice_costruttore = modello.get("codiceCostruttore")
+        except Exception:
+            logger.exception("[USATO][DETTAGLI] FAILED %s", codice)
 
-                if codice_costruttore and str(codice_costruttore).strip():
-                    res_upd = db.execute(
-                        text("""
-                            UPDATE mnet_dettagli_usato
-                            SET codice_costruttore = CAST(:codice_costruttore AS varchar)
-                            WHERE codice_motornet_uni = CAST(:codice AS varchar)
-                              AND codice_costruttore IS DISTINCT FROM CAST(:codice_costruttore AS varchar)
-                        """),
-                        {
-                            "codice": codice,
-                            "codice_costruttore": codice_costruttore,
-                        },
-                    )
+    return processed, inserted, updated
 
-                    if res_upd.rowcount == 1:
-                        updated += 1
-                        logger.info(
-                            "[USATO][DETTAGLI] UPDATE %s → %s",
-                            codice,
-                            codice_costruttore,
-                        )
+def sync_usato_dettagli():
+    logger.info("[USATO][DETTAGLI] START")
 
-            except Exception:
-                logger.exception("[USATO][DETTAGLI] FAILED %s", codice)
-                continue
+    with DBSession() as db:
+        rows = db.execute(
+            text("""
+                SELECT DISTINCT a.codice_motornet_uni
+                FROM mnet_allestimenti_usato a
+                JOIN mnet_anni_usato y
+                  ON y.marca_acronimo = a.acronimo_marca
+                WHERE y.anno >= EXTRACT(YEAR FROM CURRENT_DATE) - 1
+                ORDER BY a.codice_motornet_uni
+            """)
+        ).fetchall()
 
-        # === COMMIT FINALE (UNA SOLA VOLTA) ===
+        codici = [r[0] for r in rows]
+        if not codici:
+            logger.info("[USATO][DETTAGLI] NOTHING TO DO")
+            return
+
+        processed, inserted, updated = asyncio.run(
+            _sync_usato_dettagli_async(db, codici)
+        )
+
         db.commit()
 
         logger.info(
