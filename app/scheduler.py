@@ -120,12 +120,16 @@ def schedule_usato_jobs(scheduler):
     # --------------------------------------------------
     scheduler.add_job(
         func=sync_vehicle_versions_cm_from_stock,
-        trigger=CronTrigger(minute="*/30"),
+        trigger=CronTrigger(
+            minute="*/30",
+            hour="9-19"
+        ),
         id="usato_vehicle_versions_cm",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
-    )
+)
+
 
 
 def schedule_vcom_jobs(scheduler):
