@@ -1,4 +1,6 @@
 ﻿import asyncio
+import random
+
 import logging
 from datetime import date
 from sqlalchemy import text
@@ -415,7 +417,7 @@ async def _sync_usato_dettagli_async(db, codici):
 
                 res = db.execute(
                     text("""
-                        INSERT INTO mnet_dettagli_usato (
+                        INSERT INTO mnet_dettagli_usato_shadow (
                             codice_motornet_uni, modello, allestimento, immagine,
                             codice_costruttore, codice_motore,
                             prezzo_listino, prezzo_accessori, data_listino,
@@ -466,10 +468,15 @@ async def _sync_usato_dettagli_async(db, codici):
                     inserted += 1
                     db.commit()
                     success = True
+                
+                    await asyncio.sleep(random.uniform(0.7, 0.9))
+
 
 
 
                 break  # SUCCESSO → esci dal while
+                await asyncio.sleep(0.8)
+
 
             except RuntimeError as e:
                 if "429" in str(e):
@@ -481,7 +488,13 @@ async def _sync_usato_dettagli_async(db, codici):
                     )
                     await asyncio.sleep(wait)
                 else:
-                    raise  # errore reale → fallo emergere
+                    logger.error(
+                        "[USATO][DETTAGLI] HARD FAIL %s → skipped (%s)",
+                        codice,
+                        str(e),
+                    )
+                    break
+
 
         processed += 1
         if not success:
@@ -497,6 +510,9 @@ async def _sync_usato_dettagli_async(db, codici):
                 "[USATO][DETTAGLI] progress %d / %d (%.1f%%)",
                 processed, seen, processed * 100 / seen
             )
+            await asyncio.sleep(3)
+
+
 
     return processed, inserted, 0
 

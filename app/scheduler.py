@@ -107,7 +107,7 @@ def schedule_usato_jobs(scheduler):
 
     scheduler.add_job(
         func=sync_usato_dettagli,
-        trigger=CronTrigger(day=7, hour=1, minute=35),
+        trigger=CronTrigger(day=7, hour=10, minute=15),
         id="usato_dettagli",
         replace_existing=True,
         max_instances=1,
