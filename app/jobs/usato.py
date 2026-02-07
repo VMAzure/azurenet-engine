@@ -320,6 +320,75 @@ def to_bool(v):
             return False
     return None
 
+def build_params(modello: dict, codice: str) -> dict:
+    return {
+        "codice": codice,
+        "modello": modello.get("modello"),
+        "allestimento": modello.get("allestimento"),
+        "immagine": modello.get("immagine"),
+        "codice_costruttore": modello.get("codiceCostruttore"),
+        "codice_motore": modello.get("codiceMotore"),
+        "prezzo_listino": modello.get("prezzoListino"),
+        "prezzo_accessori": modello.get("prezzoAccessori"),
+        "data_listino": modello.get("dataListino"),
+        "marca_nome": (modello.get("marca") or {}).get("nome"),
+        "marca_acronimo": (modello.get("marca") or {}).get("acronimo"),
+        "gamma_codice": (modello.get("gammaModello") or {}).get("codice"),
+        "gamma_descrizione": (modello.get("gammaModello") or {}).get("descrizione"),
+        "gruppo_storico": (modello.get("gruppoStorico") or {}).get("descrizione"),
+        "serie_gamma": (modello.get("serieGamma") or {}).get("descrizione"),
+        "categoria": (modello.get("categoria") or {}).get("descrizione"),
+        "segmento": (modello.get("segmento") or {}).get("descrizione"),
+        "tipo": (modello.get("tipo") or {}).get("descrizione"),
+        "tipo_motore": modello.get("tipoMotore"),
+        "descrizione_motore": modello.get("descrizioneMotore"),
+        "euro": modello.get("euro"),
+        "cilindrata": modello.get("cilindrata"),
+        "cavalli_fiscali": modello.get("cavalliFiscali"),
+        "hp": modello.get("hp"),
+        "kw": modello.get("kw"),
+        "emissioni_co2": to_float_or_none(modello.get("emissioniCo2")),
+        "consumo_urbano": to_float_or_none(modello.get("consumoUrbano")),
+        "consumo_extraurbano": to_float_or_none(modello.get("consumoExtraurbano")),
+        "consumo_medio": to_float_or_none(modello.get("consumoMedio")),
+        "accelerazione": to_float_or_none(modello.get("accelerazione")),
+        "velocita": modello.get("velocita"),
+        "descrizione_marce": modello.get("descrizioneMarce"),
+        "cambio": (modello.get("cambio") or {}).get("descrizione"),
+        "trazione": (modello.get("trazione") or {}).get("descrizione"),
+        "passo": modello.get("passo"),
+        "porte": modello.get("porte"),
+        "posti": modello.get("posti"),
+        "altezza": modello.get("altezza"),
+        "larghezza": modello.get("larghezza"),
+        "lunghezza": modello.get("lunghezza"),
+        "bagagliaio": modello.get("bagagliaio"),
+        "pneumatici_anteriori": modello.get("pneumaticiAnteriori"),
+        "pneumatici_posteriori": modello.get("pneumaticiPosteriori"),
+        "coppia": modello.get("coppia"),
+        "numero_giri": modello.get("numeroGiri"),
+        "cilindri": modello.get("cilindri"),
+        "valvole": modello.get("valvole"),
+        "peso": modello.get("peso"),
+        "peso_vuoto": modello.get("pesoVuoto"),
+        "massa_p_carico": modello.get("massaPCarico"),
+        "portata": modello.get("portata"),
+        "tipo_guida": modello.get("tipoGuida"),
+        "neo_patentati": to_bool(modello.get("neoPatentati")),
+        "alimentazione": (modello.get("alimentazione") or {}).get("descrizione"),
+        "architettura": (modello.get("architettura") or {}).get("descrizione"),
+        "ricarica_standard": to_bool(modello.get("ricaricaStandard")),
+        "ricarica_veloce": to_bool(modello.get("ricaricaVeloce")),
+        "sospensioni_pneumatiche": to_bool(modello.get("sospPneum")),
+        "emissioni_urbe": to_float_or_none(modello.get("emissUrbe")),
+        "emissioni_extraurb": to_float_or_none(modello.get("emissExtraurb")),
+        "descrizione_breve": modello.get("descrizioneBreve"),
+        "peso_potenza": modello.get("pesoPotenza"),
+        "volumi": modello.get("volumi"),
+        "ridotte": to_bool(modello.get("ridotte")),
+        "paese_prod": modello.get("paeseProd"),
+    }
+
 
 async def _sync_usato_dettagli_async(db, codici):
     processed = 0
@@ -327,9 +396,12 @@ async def _sync_usato_dettagli_async(db, codici):
     seen = len(codici)
 
     for codice in codici:
-        retry = 0
 
-        while True:
+        MAX_RETRY = 5
+        retry = 0
+        success = False
+
+        while retry <= MAX_RETRY:
             try:
                 data = await motornet_get(
                     f"{USATO_DETTAGLIO_URL}?codice_motornet={codice}"
@@ -338,6 +410,8 @@ async def _sync_usato_dettagli_async(db, codici):
                 modello = data.get("modello")
                 if not modello:
                     break  # codice valido ma senza modello → vai avanti
+                    
+                params = build_params(modello, codice)
 
                 res = db.execute(
                     text("""
@@ -384,77 +458,16 @@ async def _sync_usato_dettagli_async(db, codici):
                             WHERE codice_motornet_uni = :codice
                         )
                     """),
-                    {
-                        "codice": codice,
-                        "modello": modello.get("modello"),
-                        "allestimento": modello.get("allestimento"),
-                        "immagine": modello.get("immagine"),
-                        "codice_costruttore": modello.get("codiceCostruttore"),
-                        "codice_motore": modello.get("codiceMotore"),
-                        "prezzo_listino": modello.get("prezzoListino"),
-                        "prezzo_accessori": modello.get("prezzoAccessori"),
-                        "data_listino": modello.get("dataListino"),
-                        "marca_nome": (modello.get("marca") or {}).get("nome"),
-                        "marca_acronimo": (modello.get("marca") or {}).get("acronimo"),
-                        "gamma_codice": (modello.get("gammaModello") or {}).get("codice"),
-                        "gamma_descrizione": (modello.get("gammaModello") or {}).get("descrizione"),
-                        "gruppo_storico": (modello.get("gruppoStorico") or {}).get("descrizione"),
-                        "serie_gamma": (modello.get("serieGamma") or {}).get("descrizione"),
-                        "categoria": (modello.get("categoria") or {}).get("descrizione"),
-                        "segmento": (modello.get("segmento") or {}).get("descrizione"),
-                        "tipo": (modello.get("tipo") or {}).get("descrizione"),
-                        "tipo_motore": modello.get("tipoMotore"),
-                        "descrizione_motore": modello.get("descrizioneMotore"),
-                        "euro": modello.get("euro"),
-                        "cilindrata": modello.get("cilindrata"),
-                        "cavalli_fiscali": modello.get("cavalliFiscali"),
-                        "hp": modello.get("hp"),
-                        "kw": modello.get("kw"),
-                        "emissioni_co2": to_float_or_none(modello.get("emissioniCo2")),
-                        "consumo_urbano": to_float_or_none(modello.get("consumoUrbano")),
-                        "consumo_extraurbano": to_float_or_none(modello.get("consumoExtraurbano")),
-                        "consumo_medio": to_float_or_none(modello.get("consumoMedio")),
-                        "accelerazione": to_float_or_none(modello.get("accelerazione")),
-                        "velocita": modello.get("velocita"),
-                        "descrizione_marce": modello.get("descrizioneMarce"),
-                        "cambio": (modello.get("cambio") or {}).get("descrizione"),
-                        "trazione": (modello.get("trazione") or {}).get("descrizione"),
-                        "passo": modello.get("passo"),
-                        "porte": modello.get("porte"),
-                        "posti": modello.get("posti"),
-                        "altezza": modello.get("altezza"),
-                        "larghezza": modello.get("larghezza"),
-                        "lunghezza": modello.get("lunghezza"),
-                        "bagagliaio": modello.get("bagagliaio"),
-                        "pneumatici_anteriori": modello.get("pneumaticiAnteriori"),
-                        "pneumatici_posteriori": modello.get("pneumaticiPosteriori"),
-                        "coppia": modello.get("coppia"),
-                        "numero_giri": modello.get("numeroGiri"),
-                        "cilindri": modello.get("cilindri"),
-                        "valvole": modello.get("valvole"),
-                        "peso": modello.get("peso"),
-                        "peso_vuoto": modello.get("pesoVuoto"),
-                        "massa_p_carico": modello.get("massaPCarico"),
-                        "portata": modello.get("portata"),
-                        "tipo_guida": modello.get("tipoGuida"),
-                        "neo_patentati": to_bool(modello.get("neoPatentati")),
-                        "alimentazione": (modello.get("alimentazione") or {}).get("descrizione"),
-                        "architettura": (modello.get("architettura") or {}).get("descrizione"),
-                        "ricarica_standard": to_bool(modello.get("ricaricaStandard")),
-                        "ricarica_veloce": to_bool(modello.get("ricaricaVeloce")),
-                        "sospensioni_pneumatiche": to_bool(modello.get("sospPneum")),
-                        "emissioni_urbe": to_float_or_none(modello.get("emissUrbe")),
-                        "emissioni_extraurb": to_float_or_none(modello.get("emissExtraurb")),
-                        "descrizione_breve": modello.get("descrizioneBreve"),
-                        "peso_potenza": modello.get("pesoPotenza"),
-                        "volumi": modello.get("volumi"),
-                        "ridotte": to_bool(modello.get("ridotte")),
-                        "paese_prod": modello.get("paeseProd"),
-                    },
+                    params,
+
                 )
 
                 if res.rowcount == 1:
                     inserted += 1
+                    db.commit()
+                    success = True
+
+
 
                 break  # SUCCESSO → esci dal while
 
@@ -471,6 +484,13 @@ async def _sync_usato_dettagli_async(db, codici):
                     raise  # errore reale → fallo emergere
 
         processed += 1
+        if not success:
+            logger.error(
+                "[USATO][DETTAGLI] SKIPPED %s after retries",
+                codice,
+            )
+  
+
 
         if processed % 100 == 0:
             logger.info(
