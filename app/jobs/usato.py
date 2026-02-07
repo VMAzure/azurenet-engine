@@ -417,7 +417,7 @@ async def _sync_usato_dettagli_async(db, codici):
 
                 res = db.execute(
                     text("""
-                        INSERT INTO mnet_dettagli_usato_shadow (
+                        INSERT INTO mnet_dettagli_usato (
                             codice_motornet_uni, modello, allestimento, immagine,
                             codice_costruttore, codice_motore,
                             prezzo_listino, prezzo_accessori, data_listino,
@@ -456,7 +456,7 @@ async def _sync_usato_dettagli_async(db, codici):
                             :peso_potenza, :volumi, :ridotte, :paese_prod
                         WHERE NOT EXISTS (
                             SELECT 1
-                            FROM mnet_dettagli_usato_shadow
+                            FROM mnet_dettagli_usato
 
                             WHERE codice_motornet_uni = :codice
                         )
@@ -525,10 +525,14 @@ def sync_usato_dettagli():
             text("""
                 SELECT DISTINCT a.codice_motornet_uni
                 FROM mnet_allestimenti_usato a
+                LEFT JOIN mnet_dettagli_usato d
+                  ON d.codice_motornet_uni = a.codice_motornet_uni
                 JOIN mnet_anni_usato y
                   ON y.marca_acronimo = a.acronimo_marca
                 WHERE y.anno >= EXTRACT(YEAR FROM CURRENT_DATE) - 1
-                ORDER BY a.codice_motornet_uni
+                  AND d.codice_motornet_uni IS NULL
+                ORDER BY a.codice_motornet_uni;
+
             """)
         ).fetchall()
 
