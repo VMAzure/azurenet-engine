@@ -18,7 +18,9 @@ from app.jobs.usato import (
     sync_usato_modelli,
     sync_usato_allestimenti,
     sync_usato_dettagli,
+    sync_vehicle_versions_cm_from_stock, 
 )
+
 
 from app.jobs.wltp_enrichment import wltp_enrichment_worker
 
@@ -109,6 +111,17 @@ def schedule_usato_jobs(scheduler):
         func=sync_usato_dettagli,
         trigger=CronTrigger(day=5, hour=1, minute=1),
         id="usato_dettagli",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # --------------------------------------------------
+    # USATO — MAPPING STOCK → VEHICLE_VERSIONS_CM
+    # --------------------------------------------------
+    scheduler.add_job(
+        func=sync_vehicle_versions_cm_from_stock,
+        trigger=CronTrigger(minute="*/30"),
+        id="usato_vehicle_versions_cm",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
@@ -231,3 +244,5 @@ def build_scheduler():
 
 
     return scheduler
+
+

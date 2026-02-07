@@ -554,3 +554,400 @@ def sync_usato_dettagli():
             updated,
         )
 
+# ============================================================
+# STOCK → VEHICLE_VERSIONS_CM (cod_versione_cm → Motornet mapping)
+# Robust production worker (delta-only + safe upsert)
+# ============================================================
+
+import asyncio
+import random
+import json
+
+import logging
+from typing import Any, Dict, Optional, Tuple, List
+
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+
+# NOTE: usa i tuoi import reali (come negli altri job)
+# from app.database import DBSession
+# from app.external.motornet import motornet_get
+# from app.config import USATO_COSTRUTTORE_URL  # oppure costante locale
+
+logger = logging.getLogger(__name__)
+
+# endpoint usato: /usato/auto/costruttore?codice_costruttore=...
+USATO_COSTRUTTORE_URL = (
+    "https://webservice.motornet.it/api/v2_0/rest/public/usato/auto/costruttore"
+)
+
+# pacing: ~0.7–0.9s per richiesta (come richiesto)
+PACE_MIN = 0.70
+PACE_MAX = 0.90
+
+import re
+
+def normalize_cod_versione_cm(raw: str | None) -> str | None:
+    """
+    Normalizza il codice versione:
+    - None → None
+    - strip
+    - uppercase
+    - mantiene SOLO A–Z0–9
+    - stringhe vuote → None
+    """
+    if not raw:
+        return None
+
+    norm = re.sub(r'[^A-Z0-9]', '', raw.upper())
+    return norm or None
+
+
+def _pick_best_version(resp: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Sceglie la 'versione' migliore dal payload /auto/costruttore.
+    Strategia:
+    - se c'è 'versioni' e non è vuoto: usa la prima (per quel codice_costruttore è tipicamente 1)
+    - altrimenti None
+    """
+    versioni = resp.get("versioni") or []
+    if not versioni:
+        return None
+    return versioni[0]
+
+
+def _extract_brand(resp: Dict[str, Any], v: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    marca = (v.get("marca") or {}) or {}
+    brand_code = marca.get("acronimo")
+    brand_name = marca.get("nome")
+    if brand_code and brand_name:
+        return brand_code, brand_name
+
+    # fallback: resp["marche"][0]
+    marche = resp.get("marche") or []
+    if marche:
+        brand_code = (marche[0] or {}).get("acronimo")
+        brand_name = (marche[0] or {}).get("nome")
+    return brand_code, brand_name
+
+
+def _extract_model(resp: Dict[str, Any], v: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    vehicle_versions_cm richiede model_name NOT NULL.
+    Usiamo:
+    - model_code: v["codiceModello"] (spesso presente)
+    - model_name: resp["versioniBase"][0]["gammaModello"]["descrizione"] se presente
+      fallback: v["descrizioneModelloBreveCarrozzeria"] o "modelli"[0]["gammaModello"]["descrizione"]
+    """
+    model_code = v.get("codiceModello")
+
+    model_name = None
+    versioni_base = resp.get("versioniBase") or []
+    if versioni_base:
+        vb0 = versioni_base[0] or {}
+        gamma = (vb0.get("gammaModello") or {}) or {}
+        model_name = gamma.get("descrizione")
+
+    if not model_name:
+        model_name = v.get("descrizioneModelloBreveCarrozzeria")
+
+    if not model_name:
+        modelli = resp.get("modelli") or []
+        if modelli:
+            m0 = modelli[0] or {}
+            gamma = (m0.get("gammaModello") or {}) or {}
+            model_name = gamma.get("descrizione") or (m0.get("gruppoStorico") or {}).get("descrizione")
+
+    return model_code, model_name
+
+
+def _build_vehicle_versions_cm_row(
+    cod_versione_cm: str,
+    resp: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    v = _pick_best_version(resp)
+    if not v:
+        return None
+
+    brand_code, brand_name = _extract_brand(resp, v)
+    model_code, model_name = _extract_model(resp, v)
+
+    # campi version
+    vb = (v.get("versioneBase") or {}) or {}
+    version_base_id = vb.get("id")
+    version_base_name = vb.get("descrizione")
+
+    version_name = v.get("versione") or v.get("versioneBase", {}).get("descrizione")
+
+    codice_motornet = v.get("codiceMotornet")
+    codice_eurotax = v.get("codiceEurotax")
+    codice_costruttore = v.get("codiceCostruttore")
+
+    # date
+    production_start = v.get("inizioProduzione")
+    production_end = v.get("fineProduzione")
+    commercial_start = v.get("da")
+    commercial_end = v.get("a")
+
+    doors = v.get("porte")
+    wheelbase_cm = v.get("passo")  # in Motornet è già "passo" (cm)
+    list_price = v.get("prezzoVendita")
+
+    # hard requirements: vehicle_versions_cm.brand_code, brand_name, model_name, version_name, raw_payload NOT NULL
+    if not brand_code or not brand_name or not model_name or not version_name:
+        logger.warning(
+            "[VEHICLE_VERSIONS_CM] incomplete mandatory fields for %s -> brand(%s/%s) model_name(%s) version_name(%s)",
+            cod_versione_cm,
+            brand_code,
+            brand_name,
+            model_name,
+            version_name,
+        )
+        # se mancano NOT NULL non inseriamo (evita crash)
+        return None
+
+    return {
+        "cod_versione_cm": cod_versione_cm,
+        "brand_code": brand_code,
+        "brand_name": brand_name,
+        "model_code": model_code,
+        "model_name": model_name,
+        "version_base_id": version_base_id,
+        "version_base_name": version_base_name,
+        "version_name": version_name,
+        "codice_motornet": codice_motornet,
+        "codice_eurotax": codice_eurotax,
+        "codice_costruttore": codice_costruttore,
+        "doors": doors,
+        "wheelbase_cm": wheelbase_cm,
+        "production_start": production_start,
+        "production_end": production_end,
+        "commercial_start": commercial_start,
+        "commercial_end": commercial_end,
+        "list_price": list_price,
+        "raw_payload": resp,  # jsonb
+    }
+
+
+UPSERT_SQL = text(
+    """
+    INSERT INTO public.vehicle_versions_cm (
+        cod_versione_cm,
+        brand_code,
+        brand_name,
+        model_code,
+        model_name,
+        version_base_id,
+        version_base_name,
+        version_name,
+        codice_motornet,
+        codice_eurotax,
+        codice_costruttore,
+        doors,
+        wheelbase_cm,
+        production_start,
+        production_end,
+        commercial_start,
+        commercial_end,
+        list_price,
+        raw_payload
+    )
+    VALUES (
+        :cod_versione_cm,
+        :brand_code,
+        :brand_name,
+        :model_code,
+        :model_name,
+        :version_base_id,
+        :version_base_name,
+        :version_name,
+        :codice_motornet,
+        :codice_eurotax,
+        :codice_costruttore,
+        :doors,
+        :wheelbase_cm,
+        CAST(:production_start AS date),
+        CAST(:production_end AS date),
+        CAST(:commercial_start AS date),
+        CAST(:commercial_end AS date),
+        :list_price,
+        CAST(:raw_payload AS jsonb)
+    )
+    ON CONFLICT (cod_versione_cm) DO UPDATE SET
+        -- aggiorna solo i buchi (non sovrascrive valori già presenti)
+        brand_code          = COALESCE(vehicle_versions_cm.brand_code, EXCLUDED.brand_code),
+        brand_name          = COALESCE(vehicle_versions_cm.brand_name, EXCLUDED.brand_name),
+        model_code          = COALESCE(vehicle_versions_cm.model_code, EXCLUDED.model_code),
+        model_name          = COALESCE(vehicle_versions_cm.model_name, EXCLUDED.model_name),
+        version_base_id     = COALESCE(vehicle_versions_cm.version_base_id, EXCLUDED.version_base_id),
+        version_base_name   = COALESCE(vehicle_versions_cm.version_base_name, EXCLUDED.version_base_name),
+        version_name        = COALESCE(vehicle_versions_cm.version_name, EXCLUDED.version_name),
+        codice_motornet      = COALESCE(vehicle_versions_cm.codice_motornet, EXCLUDED.codice_motornet),
+        codice_eurotax       = COALESCE(vehicle_versions_cm.codice_eurotax, EXCLUDED.codice_eurotax),
+        codice_costruttore   = COALESCE(vehicle_versions_cm.codice_costruttore, EXCLUDED.codice_costruttore),
+        doors               = COALESCE(vehicle_versions_cm.doors, EXCLUDED.doors),
+        wheelbase_cm        = COALESCE(vehicle_versions_cm.wheelbase_cm, EXCLUDED.wheelbase_cm),
+        production_start    = COALESCE(vehicle_versions_cm.production_start, EXCLUDED.production_start),
+        production_end      = COALESCE(vehicle_versions_cm.production_end, EXCLUDED.production_end),
+        commercial_start    = COALESCE(vehicle_versions_cm.commercial_start, EXCLUDED.commercial_start),
+        commercial_end      = COALESCE(vehicle_versions_cm.commercial_end, EXCLUDED.commercial_end),
+        list_price          = COALESCE(vehicle_versions_cm.list_price, EXCLUDED.list_price),
+        raw_payload         = COALESCE(vehicle_versions_cm.raw_payload, EXCLUDED.raw_payload),
+        updated_at          = now()
+    """
+)
+
+
+def _fetch_codici_da_stock(db) -> List[str]:
+    """
+    Delta-only:
+    - prendi i DISTINCT cod_versione_cm dallo stock
+    - escludi vuoti
+    - includi solo quelli non presenti in vehicle_versions_cm
+      oppure presenti ma con codice_motornet/codice_costruttore NULL (buchi)
+    """
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT
+                s.cod_versione_cm
+            FROM public.vehicles_stock_sale s
+            LEFT JOIN public.vehicle_versions_cm v
+                   ON v.cod_versione_cm = s.cod_versione_cm
+            WHERE s.is_active = true
+              AND s.cod_versione_cm IS NOT NULL
+              AND btrim(s.cod_versione_cm) <> ''
+              AND (
+                  v.id IS NULL
+                  OR v.codice_motornet IS NULL
+                  OR v.codice_costruttore IS NULL
+              )
+            ORDER BY s.cod_versione_cm
+            """
+        )
+    ).fetchall()
+
+    return list({
+        normalize_cod_versione_cm(r[0])
+        for r in rows
+        if normalize_cod_versione_cm(r[0]) is not None
+    })
+
+
+
+async def _sync_vehicle_versions_cm_async(db, codici: List[str]) -> Tuple[int, int, int, int]:
+    processed = 0
+    upserted = 0
+    skipped = 0
+    failed = 0
+
+    total = len(codici)
+
+    for cod in codici:
+        processed += 1
+
+        # audit: il codice A QUESTO PUNTO è già normalizzato,
+        # ma logghiamo se per qualche motivo non matcha il pattern
+        if not re.fullmatch(r'[A-Z0-9]+', cod):
+            logger.info(
+                "[VEHICLE_VERSIONS_CM] normalized/filtered cod_versione_cm=%s",
+                cod,
+            )
+
+        # chiamata Motornet
+        url = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod}"
+
+        try:
+            resp = await motornet_get(url)
+
+            row = _build_vehicle_versions_cm_row(cod, resp)
+            if not row:
+                skipped += 1
+            else:
+                db.execute(
+                    UPSERT_SQL,
+                    {
+                        **row,
+                        "raw_payload": json.dumps(row["raw_payload"]),
+                    },
+                )
+                db.commit()
+                upserted += 1
+
+        except Exception as e:
+            failed += 1
+            logger.exception(
+                "[VEHICLE_VERSIONS_CM] FAILED cod_versione_cm=%s err=%s",
+                cod,
+                str(e),
+            )
+
+        # pacing
+        await asyncio.sleep(random.uniform(PACE_MIN, PACE_MAX))
+
+        if processed % 50 == 0:
+            logger.info(
+                "[VEHICLE_VERSIONS_CM] progress %d/%d upserted=%d skipped=%d failed=%d",
+                processed,
+                total,
+                upserted,
+                skipped,
+                failed,
+            )
+
+    return processed, upserted, skipped, failed
+
+
+
+def sync_vehicle_versions_cm_from_stock() -> None:
+    """
+    Entry-point sync per APScheduler.
+    """
+    logger.info("[VEHICLE_VERSIONS_CM] START")
+
+    with DBSession() as db:
+        codici = _fetch_codici_da_stock(db)
+
+    if not codici:
+        logger.info("[VEHICLE_VERSIONS_CM] NOTHING TO DO")
+        return
+
+    # eseguo in una sessione dedicata per le write
+    with DBSession() as db:
+        processed, upserted, skipped, failed = asyncio.run(_sync_vehicle_versions_cm_async(db, codici))
+
+    logger.info(
+        "[VEHICLE_VERSIONS_CM] DONE processed=%d upserted=%d skipped=%d failed=%d",
+        processed,
+        upserted,
+        skipped,
+        failed,
+    )
+
+# ============================================================
+# Local execution (manual run)
+# ============================================================
+if __name__ == "__main__":
+    import logging
+    import sys
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stdout,
+    )
+
+    logger = logging.getLogger(__name__)
+
+    logger.info("[LOCAL] Running sync_vehicle_versions_cm_from_stock")
+
+    try:
+        sync_vehicle_versions_cm_from_stock()
+        logger.info("[LOCAL] Completed successfully")
+
+    except KeyboardInterrupt:
+        logger.warning("[LOCAL] Interrupted by user")
+
+    except Exception:
+        logger.exception("[LOCAL] Failed")
+        sys.exit(1)
