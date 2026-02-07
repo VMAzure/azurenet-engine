@@ -456,7 +456,8 @@ async def _sync_usato_dettagli_async(db, codici):
                             :peso_potenza, :volumi, :ridotte, :paese_prod
                         WHERE NOT EXISTS (
                             SELECT 1
-                            FROM mnet_dettagli_usato
+                            FROM mnet_dettagli_usato_shadow
+
                             WHERE codice_motornet_uni = :codice
                         )
                     """),
@@ -475,7 +476,6 @@ async def _sync_usato_dettagli_async(db, codici):
 
 
                 break  # SUCCESSO → esci dal while
-                await asyncio.sleep(0.8)
 
 
             except RuntimeError as e:
@@ -497,7 +497,7 @@ async def _sync_usato_dettagli_async(db, codici):
 
 
         processed += 1
-        if not success:
+        if not success and retry >= MAX_RETRY:
             logger.error(
                 "[USATO][DETTAGLI] SKIPPED %s after retries",
                 codice,
