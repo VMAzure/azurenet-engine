@@ -23,7 +23,7 @@ from app.jobs.usato import (
 
 
 from app.jobs.wltp_enrichment import wltp_enrichment_worker
-from app.jobs.vehicle_stock_import import vehicle_stock_csv_import_job
+from app.jobs.vehicle_stock_csv_import import vehicle_stock_csv_import_job
 
 
 def schedule_nuovo_jobs(scheduler):
