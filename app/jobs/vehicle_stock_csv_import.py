@@ -338,12 +338,33 @@ def vehicle_stock_csv_import_job():
 # --------------------------------------------------
 
 def _parse_int(value):
+    """
+    Parsing robusto interi da CSV eterogenei (km, contatori, immagini).
+
+    Regola:
+    - prende tutto
+    - rimuove . , spazi
+    - tiene solo cifre
+    - ritorna int
+    """
     try:
-        if value is None or value == "":
+        if value is None:
             return None
-        return int(float(value))
+
+        s = str(value).strip()
+        if not s:
+            return None
+
+        # rimuove separatori e spazi
+        s = s.replace(".", "").replace(",", "").replace(" ", "")
+
+        if not s.isdigit():
+            return None
+
+        return int(s)
     except Exception:
         return None
+
 
 
 def _parse_price(value):

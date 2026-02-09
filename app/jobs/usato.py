@@ -796,6 +796,14 @@ UPSERT_SQL = text(
         updated_at          = now()
     """
 )
+LINK_STOCK_SQL = text("""
+    UPDATE public.vehicles_stock_sale s
+    SET vehicle_version_cm_id = v.id
+    FROM public.vehicle_versions_cm v
+    WHERE s.vehicle_version_cm_id IS NULL
+      AND s.cod_versione_cm = v.cod_versione_cm
+""")
+
 
 
 def _fetch_codici_da_stock(db) -> List[str]:
@@ -915,6 +923,19 @@ def sync_vehicle_versions_cm_from_stock() -> None:
     # eseguo in una sessione dedicata per le write
     with DBSession() as db:
         processed, upserted, skipped, failed = asyncio.run(_sync_vehicle_versions_cm_async(db, codici))
+        
+        # --------------------------------------------------
+        # LINK STOCK → VEHICLE_VERSIONS_CM (idempotente)
+        # --------------------------------------------------
+        res = db.execute(LINK_STOCK_SQL)
+        db.commit()
+
+        linked = res.rowcount
+        logger.info(
+            "[VEHICLE_VERSIONS_CM] linked stock rows=%d",
+            linked,
+        )
+
 
     logger.info(
         "[VEHICLE_VERSIONS_CM] DONE processed=%d upserted=%d skipped=%d failed=%d",
