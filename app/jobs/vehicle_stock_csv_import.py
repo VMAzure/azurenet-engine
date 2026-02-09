@@ -13,6 +13,24 @@ logger = logging.getLogger(__name__)
 
 from datetime import datetime
 
+import re
+
+def normalize_cod_versione_cm(raw: str | None) -> str | None:
+    """
+    Normalizza il codice versione CM:
+    - None / vuoto → None
+    - strip
+    - uppercase
+    - rimuove tutto tranne A–Z0–9
+    """
+    if not raw:
+        return None
+
+    raw = str(raw).strip().upper()
+    norm = re.sub(r'[^A-Z0-9]', '', raw)
+    return norm or None
+
+
 def _parse_date(value):
     """
     Normalizza date CSV italiane (DD/MM/YYYY) → date ISO.
@@ -245,7 +263,9 @@ def vehicle_stock_csv_import_job():
                             "raw_linea": row.get("Linea"),
                             "raw_status": row.get("Status"),
                             "raw_stato": row.get("Stato"),
-                            "cod_versione_cm": row.get("Cod.Versione CM"),
+                            "cod_versione_cm": normalize_cod_versione_cm(
+                                row.get("Cod.Versione CM")
+                            ),
                             "brand": row.get("Marca"),
                             "model": row.get("Modello"),
                             "version": row.get("Versione"),

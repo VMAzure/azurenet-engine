@@ -580,12 +580,28 @@ logger = logging.getLogger(__name__)
 USATO_COSTRUTTORE_URL = (
     "https://webservice.motornet.it/api/v2_0/rest/public/usato/auto/costruttore"
 )
+USATO_VCOM_COSTRUTTORE_URL = (
+    "https://webservice.motornet.it/api/v2_0/rest/public/usato/vcom/costruttore"
+)
+
 
 # pacing: ~0.7–0.9s per richiesta (come richiesto)
 PACE_MIN = 0.70
 PACE_MAX = 0.90
 
 import re
+
+def _is_empty_motornet_response(resp: Dict[str, Any]) -> bool:
+    if not resp:
+        return True
+
+    if resp.get("versioni"):
+        return False
+
+    if resp.get("versioniBase"):
+        return False
+
+    return True
 
 def normalize_cod_versione_cm(raw: str | None) -> str | None:
     """
@@ -677,7 +693,11 @@ def _build_vehicle_versions_cm_row(
     version_base_id = vb.get("id")
     version_base_name = vb.get("descrizione")
 
-    version_name = v.get("versione") or v.get("versioneBase", {}).get("descrizione")
+    version_name = (
+        v.get("versione")
+        or v.get("versioneBase", {}).get("descrizione")
+        or model_name  # fallback estremo ma coerente
+    )
 
     codice_motornet = v.get("codiceMotornet")
     codice_eurotax = v.get("codiceEurotax")
@@ -802,23 +822,26 @@ LINK_STOCK_SQL = text("""
     FROM public.vehicle_versions_cm v
     WHERE s.vehicle_version_cm_id IS NULL
       AND s.cod_versione_cm = v.cod_versione_cm
+      AND upper(s.brand) = upper(v.brand_name);
+
 """)
 
 
 
-def _fetch_codici_da_stock(db) -> List[str]:
+def _fetch_codici_da_stock(db) -> Dict[str, str]:
     """
     Delta-only:
-    - prendi i DISTINCT cod_versione_cm dallo stock
+    - prendi cod_versione_cm + brand dallo stock
     - escludi vuoti
     - includi solo quelli non presenti in vehicle_versions_cm
-      oppure presenti ma con codice_motornet/codice_costruttore NULL (buchi)
+      oppure presenti ma con buchi
     """
     rows = db.execute(
         text(
             """
             SELECT DISTINCT
-                s.cod_versione_cm
+                s.cod_versione_cm,
+                s.brand
             FROM public.vehicles_stock_sale s
             LEFT JOIN public.vehicle_versions_cm v
                    ON v.cod_versione_cm = s.cod_versione_cm
@@ -830,57 +853,170 @@ def _fetch_codici_da_stock(db) -> List[str]:
                   OR v.codice_motornet IS NULL
                   OR v.codice_costruttore IS NULL
               )
-            ORDER BY s.cod_versione_cm
             """
         )
     ).fetchall()
 
-    return list({
-        normalize_cod_versione_cm(r[0])
-        for r in rows
-        if normalize_cod_versione_cm(r[0]) is not None
-    })
+    result: Dict[str, str] = {}
+
+    for cod, brand in rows:
+        norm = normalize_cod_versione_cm(cod)
+        if norm:
+            # se per lo stesso codice arrivano più brand,
+            # teniamo il primo (sono quasi sempre identici)
+            result.setdefault(norm, brand)
+
+    return result
 
 
+def _norm_brand(s: str | None) -> Optional[str]:
+    if not s:
+        return None
+    return re.sub(r'[^A-Z0-9]', '', s.upper())
 
-async def _sync_vehicle_versions_cm_async(db, codici: List[str]) -> Tuple[int, int, int, int]:
+def _brand_matches(stock_brand: str | None, motornet_brand: str | None) -> bool:
+    """
+    Verifica soft di coerenza marca.
+    """
+    sb = _norm_brand(stock_brand)
+    mb = _norm_brand(motornet_brand)
+
+    if not sb or not mb:
+        return False
+
+    # match diretto o contenimento
+    return sb == mb or sb in mb or mb in sb
+
+
+async def _sync_vehicle_versions_cm_async(
+    db,
+    codici_map: Dict[str, str],
+) -> Tuple[int, int, int, int]:
+
     processed = 0
     upserted = 0
     skipped = 0
     failed = 0
 
-    total = len(codici)
+    total = len(codici_map)
 
-    for cod in codici:
+    for cod, stock_brand in codici_map.items():
         processed += 1
 
-        # audit: il codice A QUESTO PUNTO è già normalizzato,
-        # ma logghiamo se per qualche motivo non matcha il pattern
+        # audit: il codice A QUESTO PUNTO è già normalizzato
         if not re.fullmatch(r'[A-Z0-9]+', cod):
             logger.info(
                 "[VEHICLE_VERSIONS_CM] normalized/filtered cod_versione_cm=%s",
                 cod,
             )
 
-        # chiamata Motornet
-        url = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod}"
-
         try:
-            resp = await motornet_get(url)
+            resp = None
 
+            # --------------------------------------------------
+            # 1) AUTO
+            # --------------------------------------------------
+            url_auto = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod}"
+            resp = await motornet_get(url_auto)
+
+            # --------------------------------------------------
+            # 2) AUTO vuoto → VCOM
+            # --------------------------------------------------
+            if _is_empty_motornet_response(resp):
+
+                logger.info(
+                    "[VEHICLE_VERSIONS_CM] AUTO empty, trying VCOM cod=%s",
+                    cod,
+                )
+                url_vcom = f"{USATO_VCOM_COSTRUTTORE_URL}?codice_costruttore={cod}"
+                resp = await motornet_get(url_vcom)
+
+            # --------------------------------------------------
+            # 3) fallback -3 (solo se NON degenerato)
+            # --------------------------------------------------
+            if _is_empty_motornet_response(resp):
+
+                cod_fallback = cod[:-3]
+
+                # guardia: il fallback NON deve produrre un codice senza senso
+                if not cod_fallback or len(cod_fallback) < 3:
+                    logger.info(
+                        "[VEHICLE_VERSIONS_CM] fallback skipped (degenerate) cod=%s -> %s",
+                        cod,
+                        cod_fallback,
+                    )
+                    skipped += 1
+                    continue
+
+                logger.info(
+                    "[VEHICLE_VERSIONS_CM] fallback -3 cod=%s -> %s",
+                    cod,
+                    cod_fallback,
+                )
+
+                # AUTO fallback
+                url_auto_fb = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod_fallback}"
+                resp = await motornet_get(url_auto_fb)
+
+                # VCOM fallback
+                if _is_empty_motornet_response(resp):
+                    url_vcom_fb = f"{USATO_VCOM_COSTRUTTORE_URL}?codice_costruttore={cod_fallback}"
+                    resp = await motornet_get(url_vcom_fb)
+
+
+            # --------------------------------------------------
+            # 3) ancora vuoto → fallback -3 (AUTO → VCOM)
+            # --------------------------------------------------
+            if _is_empty_motornet_response(resp) and len(cod) > 3:
+                cod_fallback = cod[:-3]
+                logger.info(
+                    "[VEHICLE_VERSIONS_CM] fallback -3 cod=%s -> %s",
+                    cod,
+                    cod_fallback,
+                )
+
+                # AUTO fallback
+                url_auto_fb = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod_fallback}"
+                resp = await motornet_get(url_auto_fb)
+
+                # VCOM fallback
+                if _is_empty_motornet_response(resp):
+                    logger.info(
+                        "[VEHICLE_VERSIONS_CM] fallback -3 AUTO empty, trying VCOM cod=%s",
+                        cod_fallback,
+                    )
+                    url_vcom_fb = f"{USATO_VCOM_COSTRUTTORE_URL}?codice_costruttore={cod_fallback}"
+                    resp = await motornet_get(url_vcom_fb)
+
+            # --------------------------------------------------
+            # BUILD + GUARDRAIL + UPSERT
+            # --------------------------------------------------
             row = _build_vehicle_versions_cm_row(cod, resp)
             if not row:
                 skipped += 1
-            else:
-                db.execute(
-                    UPSERT_SQL,
-                    {
-                        **row,
-                        "raw_payload": json.dumps(row["raw_payload"]),
-                    },
+                continue
+
+            if not _brand_matches(stock_brand, row["brand_name"]):
+                logger.warning(
+                    "[VEHICLE_VERSIONS_CM] brand mismatch cod=%s stock=%s motornet=%s",
+                    cod,
+                    stock_brand,
+                    row["brand_name"],
                 )
-                db.commit()
-                upserted += 1
+                skipped += 1
+                continue
+
+            db.execute(
+                UPSERT_SQL,
+                {
+                    **row,
+                    "raw_payload": json.dumps(row["raw_payload"]),
+                },
+            )
+            db.commit()
+            upserted += 1
+
+
 
         except Exception as e:
             failed += 1
@@ -907,6 +1043,7 @@ async def _sync_vehicle_versions_cm_async(db, codici: List[str]) -> Tuple[int, i
 
 
 
+
 def sync_vehicle_versions_cm_from_stock() -> None:
     """
     Entry-point sync per APScheduler.
@@ -914,15 +1051,18 @@ def sync_vehicle_versions_cm_from_stock() -> None:
     logger.info("[VEHICLE_VERSIONS_CM] START")
 
     with DBSession() as db:
-        codici = _fetch_codici_da_stock(db)
+       codici_map = _fetch_codici_da_stock(db)
 
-    if not codici:
+
+    if not codici_map:
         logger.info("[VEHICLE_VERSIONS_CM] NOTHING TO DO")
         return
 
     # eseguo in una sessione dedicata per le write
     with DBSession() as db:
-        processed, upserted, skipped, failed = asyncio.run(_sync_vehicle_versions_cm_async(db, codici))
+        processed, upserted, skipped, failed = asyncio.run(
+            _sync_vehicle_versions_cm_async(db, codici_map)
+        )
         
         # --------------------------------------------------
         # LINK STOCK → VEHICLE_VERSIONS_CM (idempotente)
