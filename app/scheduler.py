@@ -23,6 +23,7 @@ from app.jobs.usato import (
 
 
 from app.jobs.wltp_enrichment import wltp_enrichment_worker
+from app.jobs.vehicle_stock_import import vehicle_stock_csv_import_job
 
 
 def schedule_nuovo_jobs(scheduler):
@@ -212,6 +213,21 @@ def schedule_wltp_jobs(scheduler):
 
     logging.info("[SCHEDULER] WLTP enrichment job registered")
 
+
+    # --------------------------------------------------
+    # VEHICLE STOCK — CSV IMPORT (FULL SYNC)
+    # --------------------------------------------------
+    scheduler.add_job(
+        func=vehicle_stock_csv_import_job,
+        trigger=CronTrigger(
+            minute=0,          # allo scoccare dell'ora
+            hour="9-19",       # solo dalle 09 alle 19
+        ),
+        id="vehicle_stock_csv_import",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
 
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
