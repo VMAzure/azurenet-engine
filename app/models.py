@@ -13,6 +13,7 @@
     BigInteger,
     TIMESTAMP,
     CheckConstraint,
+    JSON,
 
 
 )
@@ -715,16 +716,48 @@ class MnetModelliImgOldAI(Base):
         nullable=False,
     )
 
+
 class DealerPublic(Base):
     __tablename__ = "dealer_public"
     __table_args__ = {"schema": "public"}
 
     id = Column(Integer, primary_key=True)
+    dealer_code = Column(String(50), nullable=False)
+
+    ragione_sociale = Column(String(255), nullable=False)
+    nome_commerciale = Column(String(255), nullable=False)
+
+    partita_iva = Column(String(50))
+
+    indirizzo = Column(String(255), nullable=False)
+    cap = Column(String(20), nullable=False)
+    citta = Column(String(100), nullable=False)
+    provincia = Column(String(50), nullable=False)
+    nazione = Column(String(50))
+
+    telefono = Column(String(50))
+    email = Column(String(255))
+
     google_place_id = Column(Text)
+    opening_hours = Column(JSON)
+
+    latitude = Column(Numeric(10, 8))
+    longitude = Column(Numeric(11, 8))
+    google_maps_url = Column(Text)
+
+    price_range = Column(String(20))
+    area_served = Column(String(255))
+
+    is_active = Column(Boolean)
+
+    founded_year = Column(Integer)
 
     rating_value = Column(Numeric(2, 1))
     review_count = Column(Integer)
     reviews_last_sync = Column(DateTime)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class DealerReview(Base):

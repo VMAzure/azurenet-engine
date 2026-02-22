@@ -30,7 +30,7 @@ def google_reviews_sync_job():
         dealer_ids = [
             d.id
             for d in db.query(DealerPublic.id)
-            .filter(DealerPublic.google_place_id.isnot(None))
+            .filter(DealerPublic.is_active == True)
             .all()
         ]
 
@@ -61,9 +61,84 @@ def sync_dealer_reviews(dealer_id: int):
             logging.warning(f"[REVIEWS] Dealer {dealer_id} non trovato")
             return
 
+        # --- ENSURE PLACE ID ---
         if not dealer.google_place_id:
-            logging.warning(f"[REVIEWS] Dealer {dealer_id} senza google_place_id")
-            return
+            logging.info(f"[REVIEWS] Resolving place_id for dealer_id={dealer_id}")
+
+            query = f"{dealer.ragione_sociale} {dealer.indirizzo} {dealer.cap} {dealer.citta}"
+            logging.info(f"[REVIEWS] Google query: {query}")
+
+            search_url = "https://places.googleapis.com/v1/places:searchText"
+
+            headers = {
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": GOOGLE_API_KEY,
+                "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress"
+            }
+
+            payload = {
+                "textQuery": query,
+                "languageCode": "it"
+            }
+
+            try:
+                res = requests.post(search_url, headers=headers, json=payload, timeout=10)
+                res.raise_for_status()
+                data = res.json()
+
+                places = data.get("places", [])
+
+                logging.info(f"[REVIEWS] Google returned {len(places)} places")
+
+                if not places:
+                    logging.warning(f"[REVIEWS] No place found for dealer_id={dealer_id}")
+                    return
+
+                first = places[0]
+
+                logging.info(
+                    f"[REVIEWS] Selected place_id={first.get('id')} "
+                    f"name={first.get('displayName', {}).get('text')} "
+                    f"address={first.get('formattedAddress')}"
+                )
+
+                dealer.google_place_id = first.get("id")
+                db.commit()
+                db.refresh(dealer)
+
+            except Exception:
+                logging.exception(f"[REVIEWS] Failed resolving place_id for dealer_id={dealer_id}")
+                return
+
+                # --- ENSURE GEO ---
+        if dealer.google_place_id and not dealer.latitude:
+            geo_url = f"https://places.googleapis.com/v1/places/{dealer.google_place_id}"
+
+            headers = {
+                "X-Goog-Api-Key": GOOGLE_API_KEY,
+                "X-Goog-FieldMask": "location"
+            }
+
+            try:
+                res = requests.get(geo_url, headers=headers, timeout=10)
+                res.raise_for_status()
+                geo_data = res.json()
+
+                location = geo_data.get("location")
+                logging.info(f"[REVIEWS] Geo raw response: {location}")
+
+                if location:
+                    dealer.latitude = location.get("latitude")
+                    dealer.longitude = location.get("longitude")
+                    dealer.google_maps_url = f"https://www.google.com/maps/place/?q=place_id:{dealer.google_place_id}"
+                    db.commit()
+
+                    logging.info(
+                        f"[REVIEWS] Geo saved lat={dealer.latitude} lng={dealer.longitude}"
+                    )
+
+            except Exception:
+                logging.exception(f"[REVIEWS] Failed resolving geo for dealer_id={dealer_id}")
 
         logging.info(f"[REVIEWS] Sync dealer_id={dealer_id}")
 
