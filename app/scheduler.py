@@ -24,7 +24,7 @@ from app.jobs.usato import (
 
 from app.jobs.wltp_enrichment import wltp_enrichment_worker
 from app.jobs.vehicle_stock_csv_import import vehicle_stock_csv_import_job
-
+from app.jobs.sync_google_reviews import google_reviews_sync_job
 
 def schedule_nuovo_jobs(scheduler):
     # --------------------------------------------------
@@ -229,6 +229,18 @@ def schedule_wltp_jobs(scheduler):
         coalesce=True,
     )
 
+def schedule_reviews_jobs(scheduler):
+    scheduler.add_job(
+        func=google_reviews_sync_job,
+        trigger=CronTrigger(hour=3, minute=30),  # ogni giorno 03:30
+        id="google_reviews_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    logging.info("[SCHEDULER] GOOGLE REVIEWS job registered")
+
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 
@@ -261,6 +273,10 @@ def build_scheduler():
     # registra WLTP (normativa euro)
     schedule_wltp_jobs(scheduler)
     logging.info("[SCHEDULER] WLTP jobs registered")
+
+    # registra GOOGLE REVIEWS
+    schedule_reviews_jobs(scheduler)
+    logging.info("[SCHEDULER] GOOGLE REVIEWS jobs registered")
 
 
     return scheduler

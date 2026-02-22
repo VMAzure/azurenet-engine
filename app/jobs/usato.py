@@ -581,7 +581,7 @@ USATO_COSTRUTTORE_URL = (
     "https://webservice.motornet.it/api/v2_0/rest/public/usato/auto/costruttore"
 )
 USATO_VCOM_COSTRUTTORE_URL = (
-    "https://webservice.motornet.it/api/v2_0/rest/public/usato/vcom/costruttore"
+    "https://webservice.motornet.it/api/v3_0/rest/public/usato/vcom/costruttore"
 )
 
 
@@ -699,7 +699,10 @@ def _build_vehicle_versions_cm_row(
         or model_name  # fallback estremo ma coerente
     )
 
-    codice_motornet = v.get("codiceMotornet")
+    codice_motornet = (
+        v.get("codiceMotornet")
+        or v.get("codiceMotornetUnivoco")
+    )
     codice_eurotax = v.get("codiceEurotax")
     codice_costruttore = v.get("codiceCostruttore")
 
@@ -914,79 +917,51 @@ async def _sync_vehicle_versions_cm_async(
             resp = None
 
             # --------------------------------------------------
-            # 1) AUTO
+            # 1) VCOM FULL CODE
             # --------------------------------------------------
-            url_auto = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod}"
-            resp = await motornet_get(url_auto)
+            url_vcom = f"{USATO_VCOM_COSTRUTTORE_URL}?codice_costruttore={cod}"
+            resp = await motornet_get(url_vcom)
 
             # --------------------------------------------------
-            # 2) AUTO vuoto → VCOM
-            # --------------------------------------------------
-            if _is_empty_motornet_response(resp):
-
-                logger.info(
-                    "[VEHICLE_VERSIONS_CM] AUTO empty, trying VCOM cod=%s",
-                    cod,
-                )
-                url_vcom = f"{USATO_VCOM_COSTRUTTORE_URL}?codice_costruttore={cod}"
-                resp = await motornet_get(url_vcom)
-
-            # --------------------------------------------------
-            # 3) fallback -3 (solo se NON degenerato)
+            # 2) VCOM TRUNCATED (-3)
             # --------------------------------------------------
             if _is_empty_motornet_response(resp):
+                cod_trunc = cod[:-3] if len(cod) > 6 else None
 
-                cod_fallback = cod[:-3]
-
-                # guardia: il fallback NON deve produrre un codice senza senso
-                if not cod_fallback or len(cod_fallback) < 3:
+                if cod_trunc:
                     logger.info(
-                        "[VEHICLE_VERSIONS_CM] fallback skipped (degenerate) cod=%s -> %s",
+                        "[VEHICLE_VERSIONS_CM] VCOM full empty, trying VCOM -3 cod=%s -> %s",
                         cod,
-                        cod_fallback,
+                        cod_trunc,
                     )
-                    skipped += 1
-                    continue
-
-                logger.info(
-                    "[VEHICLE_VERSIONS_CM] fallback -3 cod=%s -> %s",
-                    cod,
-                    cod_fallback,
-                )
-
-                # AUTO fallback
-                url_auto_fb = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod_fallback}"
-                resp = await motornet_get(url_auto_fb)
-
-                # VCOM fallback
-                if _is_empty_motornet_response(resp):
-                    url_vcom_fb = f"{USATO_VCOM_COSTRUTTORE_URL}?codice_costruttore={cod_fallback}"
-                    resp = await motornet_get(url_vcom_fb)
-
+                    url_vcom_trunc = f"{USATO_VCOM_COSTRUTTORE_URL}?codice_costruttore={cod_trunc}"
+                    resp = await motornet_get(url_vcom_trunc)
 
             # --------------------------------------------------
-            # 3) ancora vuoto → fallback -3 (AUTO → VCOM)
+            # 3) AUTO FULL
             # --------------------------------------------------
-            if _is_empty_motornet_response(resp) and len(cod) > 3:
-                cod_fallback = cod[:-3]
+            if _is_empty_motornet_response(resp):
                 logger.info(
-                    "[VEHICLE_VERSIONS_CM] fallback -3 cod=%s -> %s",
+                    "[VEHICLE_VERSIONS_CM] VCOM empty, trying AUTO full cod=%s",
                     cod,
-                    cod_fallback,
                 )
+                url_auto = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod}"
+                resp = await motornet_get(url_auto)
 
-                # AUTO fallback
-                url_auto_fb = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod_fallback}"
-                resp = await motornet_get(url_auto_fb)
+            # --------------------------------------------------
+            # 4) AUTO TRUNCATED (-3)
+            # --------------------------------------------------
+            if _is_empty_motornet_response(resp):
+                cod_trunc = cod[:-3] if len(cod) > 6 else None
 
-                # VCOM fallback
-                if _is_empty_motornet_response(resp):
+                if cod_trunc:
                     logger.info(
-                        "[VEHICLE_VERSIONS_CM] fallback -3 AUTO empty, trying VCOM cod=%s",
-                        cod_fallback,
+                        "[VEHICLE_VERSIONS_CM] AUTO full empty, trying AUTO -3 cod=%s -> %s",
+                        cod,
+                        cod_trunc,
                     )
-                    url_vcom_fb = f"{USATO_VCOM_COSTRUTTORE_URL}?codice_costruttore={cod_fallback}"
-                    resp = await motornet_get(url_vcom_fb)
+                    url_auto_trunc = f"{USATO_COSTRUTTORE_URL}?codice_costruttore={cod_trunc}"
+                    resp = await motornet_get(url_auto_trunc)
 
             # --------------------------------------------------
             # BUILD + GUARDRAIL + UPSERT

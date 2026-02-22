@@ -714,3 +714,43 @@ class MnetModelliImgOldAI(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+class DealerPublic(Base):
+    __tablename__ = "dealer_public"
+    __table_args__ = {"schema": "public"}
+
+    id = Column(Integer, primary_key=True)
+    google_place_id = Column(Text)
+
+    rating_value = Column(Numeric(2, 1))
+    review_count = Column(Integer)
+    reviews_last_sync = Column(DateTime)
+
+
+class DealerReview(Base):
+    __tablename__ = "dealer_reviews"
+    __table_args__ = {"schema": "public"}
+
+    id = Column(BigInteger, primary_key=True)
+
+    dealer_id = Column(
+        Integer,
+        ForeignKey("public.dealer_public.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    author_name = Column(String(255))
+    author_photo = Column(Text)
+    profile_url = Column(Text)
+
+    rating = Column(Integer, nullable=False)
+    review_text = Column(Text, nullable=False)
+
+    published_relative = Column(String(100))
+    published_at = Column(DateTime)
+
+    review_hash = Column(String(255), unique=True, nullable=False)
+    source = Column(String(50), default="google")
+
+    created_at = Column(DateTime, server_default=func.now())
