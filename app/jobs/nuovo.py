@@ -363,6 +363,19 @@ def sync_nuovo_allestimenti():
 # ============================================================
 # NUOVO → DETTAGLI (DELTA-ONLY, PRODUZIONE)
 # ============================================================
+def delete_nuovo_allestimento(db, codice_motornet_uni: str) -> None:
+    """
+    Rimozione allestimento dal dominio NUOVO.
+    Cascade previsto su mnet_dettagli e mnet_immagini (FK -> mnet_allestimenti ON DELETE CASCADE).
+    """
+    db.execute(
+        text("""
+            DELETE FROM mnet_allestimenti
+            WHERE codice_motornet_uni = :codice
+        """),
+        {"codice": codice_motornet_uni},
+    )
+
 
 def sync_nuovo_dettagli():
     logging.info("[NUOVO][DETTAGLI] START")
@@ -387,7 +400,8 @@ def sync_nuovo_dettagli():
         return
 
     inserted = 0
-    seen = len(codici)
+    deleted_fuori_produzione = 0
+    failed = 0
 
     for codice_uni in codici:
         try:
@@ -405,7 +419,7 @@ def sync_nuovo_dettagli():
 
             with DBSession() as db:
                 res = db.execute(
-                    text("""
+                    text("""  -- (QUI resta IDENTICO il tuo INSERT in mnet_dettagli) 
                         INSERT INTO mnet_dettagli (
                             codice_motornet_uni,
                             alimentazione,
@@ -696,12 +710,40 @@ def sync_nuovo_dettagli():
                     inserted += 1
                     logging.info("[NUOVO][DETTAGLI] inserted %s", codice_uni)
 
+        except RuntimeError as e:
+            msg = str(e)
+
+            # 412 + "Veicolo fuori produzione" -> DELETE allestimento
+            if "[412]" in msg and "Veicolo fuori produzione" in msg:
+                with DBSession() as db_del:
+                    try:
+                        delete_nuovo_allestimento(db_del, codice_uni)
+                        deleted_fuori_produzione += 1
+                        logging.warning(
+                            "[NUOVO][DETTAGLI] DELETE allestimento %s (fuori produzione)",
+                            codice_uni,
+                        )
+                    except Exception:
+                        failed += 1
+                        logging.exception(
+                            "[NUOVO][DETTAGLI] DELETE FAILED %s (fuori produzione)",
+                            codice_uni,
+                        )
+                continue
+
+            failed += 1
+            logging.error("[NUOVO][DETTAGLI] FAILED %s (%s)", codice_uni, e)
+            continue
+
         except Exception:
+            failed += 1
             logging.exception("[NUOVO][DETTAGLI] FAILED %s", codice_uni)
             continue
 
     logging.info(
-        "[NUOVO][DETTAGLI] DONE (new=%d, total_missing_seen=%d)",
+        "[NUOVO][DETTAGLI] DONE (new=%d, deleted_fuori_prod=%d, failed=%d, total_missing_seen=%d)",
         inserted,
-        seen,
+        deleted_fuori_produzione,
+        failed,
+        len(codici),
     )
