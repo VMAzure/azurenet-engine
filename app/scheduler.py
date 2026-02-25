@@ -27,6 +27,7 @@ from app.jobs.vehicle_stock_csv_import import vehicle_stock_csv_import_job
 from app.jobs.sync_google_reviews import google_reviews_sync_job
 
 from app.jobs.sync_motornet_immagini_fill import run as sync_nuovo_immagini_fill
+from app.jobs.queue_modelli_missing import run as queue_modelli_missing
 
 def schedule_nuovo_jobs(scheduler):
     # --------------------------------------------------
@@ -73,6 +74,15 @@ def schedule_nuovo_jobs(scheduler):
         func=sync_nuovo_immagini_fill,
         trigger=CronTrigger(day=11, hour=7, minute=30),
         id="nuovo_immagini_fill",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        func=queue_modelli_missing,
+        trigger=CronTrigger(day=11, hour=9, minute=0),  # 30 min dopo
+        id="nuovo_queue_modelli_missing",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

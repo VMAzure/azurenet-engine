@@ -42,6 +42,7 @@ SQL_GET_CODES_ONLY_LT = """
 WITH cnt AS (
   SELECT codice_motornet_uni, COUNT(*) AS n
   FROM public.mnet_immagini
+  WHERE codice_visuale IS NOT NULL
   GROUP BY codice_motornet_uni
 )
 SELECT d.codice_motornet_uni
@@ -53,7 +54,10 @@ ORDER BY d.codice_motornet_uni;
 """
 
 SQL_COUNT_FOR_CODE = """
-SELECT COUNT(*) FROM public.mnet_immagini WHERE codice_motornet_uni = :codice;
+SELECT COUNT(*)
+FROM public.mnet_immagini
+WHERE codice_motornet_uni = :codice
+  AND codice_visuale IS NOT NULL;
 """
 
 SQL_UPSERT_IMAGE = """
@@ -131,6 +135,10 @@ def select_images(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             continue
 
         cv = _norm_str(it.get("codiceVisuale"))
+
+        if cv is None:
+            continue
+
         cf = _norm_str(it.get("codiceFotografia"))
 
         # grouping A) = (codiceVisuale, codiceFotografia)
