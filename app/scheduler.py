@@ -28,6 +28,8 @@ from app.jobs.sync_google_reviews import google_reviews_sync_job
 
 from app.jobs.sync_motornet_immagini_fill import run as sync_nuovo_immagini_fill
 from app.jobs.queue_modelli_missing import run as queue_modelli_missing
+from app.jobs.nlt_disattiva_fuori_catalogo import run as nlt_disattiva_fuori_catalogo
+
 
 def schedule_nuovo_jobs(scheduler):
     # --------------------------------------------------
@@ -83,6 +85,15 @@ def schedule_nuovo_jobs(scheduler):
         func=queue_modelli_missing,
         trigger=CronTrigger(day=11, hour=9, minute=0),  # 30 min dopo
         id="nuovo_queue_modelli_missing",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        func=nlt_disattiva_fuori_catalogo,
+        trigger=CronTrigger(day=11, hour=17, minute=40),  
+        id="nlt_disattiva_fuori_catalogo",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
