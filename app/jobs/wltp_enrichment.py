@@ -193,13 +193,21 @@ def wltp_enrichment_worker():
                 directive = None  # <<<<<< OBBLIGATORIO
 
                 try:
-                    data = asyncio.run(motornet_get(url))
-                    records = data.get("wltp", [])
+                    try:
+                        data = asyncio.run(motornet_get(url))
+                    except RuntimeError as e:
+                        if "bound to a different event loop" in str(e):
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            data = loop.run_until_complete(motornet_get(url))
+                            loop.close()
+                        else:
+                            raise
 
+                    records = data.get("wltp", [])
                     directive = resolve_directive_from_wltp(records, anno)
 
                 except RuntimeError as e:
-                    # WLTP assente (412) → fallback legacy
                     if "PRECONDITION_FAILED" in str(e) or "412" in str(e):
                         logger.info(
                             "[WLTP] %s: nessun record WLTP (412), fallback legacy",
@@ -249,3 +257,19 @@ def wltp_enrichment_worker():
         db.commit()
 
     logger.info("[WLTP] DONE")
+
+# ============================================================
+# LOCAL ENTRYPOINT
+# ============================================================
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+
+    try:
+        wltp_enrichment_worker()
+    except Exception as e:
+        logging.exception("WLTP worker crashed: %s", e)
+        raise
