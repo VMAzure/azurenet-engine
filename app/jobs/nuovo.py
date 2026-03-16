@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 from datetime import datetime
 from sqlalchemy import text
@@ -30,7 +30,8 @@ NUOVO_DETTAGLIO_URL = (
 # CONFIG
 # ============================================================
 
-ANNO_RIF = datetime.now().year
+def _anno_rif():
+    return datetime.now().year
 
 def delete_nuovo_modello(db, codice_modello: str):
     """
@@ -150,7 +151,7 @@ def sync_nuovo_modelli():
         try:
             data = asyncio.run(
                 motornet_get(
-                    f"{NUOVO_MODELLI_URL}?codice_marca={acronimo}&anno={ANNO_RIF}"
+                    f"{NUOVO_MODELLI_URL}?codice_marca={acronimo}&anno={_anno_rif()}"
                 )
             )
         except RuntimeError as e:
@@ -292,7 +293,7 @@ def sync_nuovo_allestimenti():
         try:
             data = asyncio.run(
                 motornet_get(
-                    f"{NUOVO_VERSIONI_URL}?codice_modello={codice_modello}&anno={ANNO_RIF}"
+                    f"{NUOVO_VERSIONI_URL}?codice_modello={codice_modello}&anno={_anno_rif()}"
                 )
             )
 

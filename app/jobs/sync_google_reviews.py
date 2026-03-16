@@ -1,11 +1,10 @@
-﻿import logging
+import logging
 import hashlib
 import os
 import requests
 from datetime import datetime
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
 from app.database import SessionLocal
 from app.models import DealerPublic, DealerReview  # ti dirò sotto cosa aggiungere
@@ -171,19 +170,19 @@ def sync_dealer_reviews(dealer_id: int):
 
         for r in reviews_data:
 
-            text = (
+            review_body = (
                 r.get("originalText", {}).get("text")
                 or r.get("text", {}).get("text", "")
             )
 
-            if not text:
+            if not review_body:
                 continue
 
-            text = text.strip()
+            review_body = review_body.strip()
             author = r.get("authorAttribution", {}).get("displayName", "")
             rating = r.get("rating")
 
-            review_hash = compute_review_hash(author, rating, text)
+            review_hash = compute_review_hash(author, rating, review_body)
 
             exists = db.query(DealerReview).filter(
                 DealerReview.review_hash == review_hash
@@ -208,7 +207,7 @@ def sync_dealer_reviews(dealer_id: int):
                 author_photo=r.get("authorAttribution", {}).get("photoUri"),
                 profile_url=r.get("authorAttribution", {}).get("uri"),
                 rating=rating,
-                review_text=text,
+                review_text=review_body,
                 published_relative=r.get("relativePublishTimeDescription"),
                 published_at=published_at,
                 review_hash=review_hash,

@@ -1,9 +1,13 @@
-﻿import asyncio
-import random
-
+import asyncio
+import json
 import logging
+import random
+import re
 from datetime import date
+from typing import Any, Dict, List, Optional, Tuple
+
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import DBSession
 from app.external.motornet import motornet_get
@@ -559,22 +563,8 @@ def sync_usato_dettagli():
 # Robust production worker (delta-only + safe upsert)
 # ============================================================
 
-import asyncio
-import random
-import json
 
-import logging
-from typing import Any, Dict, Optional, Tuple, List
 
-from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
-
-# NOTE: usa i tuoi import reali (come negli altri job)
-# from app.database import DBSession
-# from app.external.motornet import motornet_get
-# from app.config import USATO_COSTRUTTORE_URL  # oppure costante locale
-
-logger = logging.getLogger(__name__)
 
 # endpoint usato: /usato/auto/costruttore?codice_costruttore=...
 USATO_COSTRUTTORE_URL = (
@@ -589,7 +579,6 @@ USATO_VCOM_COSTRUTTORE_URL = (
 PACE_MIN = 0.70
 PACE_MAX = 0.90
 
-import re
 
 def _is_empty_motornet_response(resp: Dict[str, Any]) -> bool:
     if not resp:

@@ -1,16 +1,10 @@
-﻿import time
+import time
 import logging
 from dotenv import load_dotenv
 from pathlib import Path
-from apscheduler.schedulers.background import BackgroundScheduler
-
-scheduler = BackgroundScheduler(timezone="Europe/Rome")
-
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
-
-import os
 
 from app.scheduler import build_scheduler
 
