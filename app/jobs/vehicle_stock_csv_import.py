@@ -1,19 +1,15 @@
-﻿import csv
+import csv
 import io
 import logging
+import re
 from datetime import datetime
 
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import engine
 from app.storage import download_bytes
 
 logger = logging.getLogger(__name__)
-
-from datetime import datetime
-
-import re
 
 def normalize_cod_versione_cm(raw: str | None) -> str | None:
     """

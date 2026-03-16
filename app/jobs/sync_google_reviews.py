@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import hashlib
 import os
 import requests
@@ -38,7 +38,10 @@ def google_reviews_sync_job():
         db.close()
 
     for dealer_id in dealer_ids:
-        sync_dealer_reviews(dealer_id)
+        try:
+            sync_dealer_reviews(dealer_id)
+        except Exception:
+            logging.exception("[REVIEWS] dealer_id=%s FAILED — continuo con i prossimi", dealer_id)
 
     logging.info("[REVIEWS] Global sync done")
 

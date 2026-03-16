@@ -1,4 +1,4 @@
-﻿from datetime import date, datetime
+from datetime import date, datetime
 import re
 
 
@@ -232,21 +232,7 @@ def build_minimal_payload(
         payload["emptyWeightUnit"] = "kg"
 
     # -----------------------------
-    # Peso totale (AS24 - VIC)
-    # -----------------------------
-    if as24_gross_weight is not None:
-        payload["grossVehicleWeight"] = as24_gross_weight
-
-
-    # -----------------------------
-    # Portata massima (AS24 - VIC)
-    # -----------------------------
-    if as24_payload is not None:
-        payload["maxPayload"] = as24_payload
-
-
-    # -----------------------------
-    # Pesi VIC (AS24)
+    # Peso totale + portata (AS24 - VIC)
     # -----------------------------
     if as24_gross_weight is not None:
         payload["grossVehicleWeight"] = as24_gross_weight
@@ -258,18 +244,19 @@ def build_minimal_payload(
 
     # -----------------------------
     # Dimensioni veicolo (AS24)
+    # Valori in mm (già convertiti a monte)
     # -----------------------------
     if as24_length is not None:
         payload["length"] = as24_length
-        payload["lengthUnit"] = "cm"
+        payload["lengthUnit"] = "mm"
 
     if as24_width is not None:
         payload["width"] = as24_width
-        payload["widthUnit"] = "cm"
+        payload["widthUnit"] = "mm"
 
     if as24_height is not None:
         payload["height"] = as24_height
-        payload["heightUnit"] = "cm"
+        payload["heightUnit"] = "mm"
 
     if as24_wheelbase is not None:
         payload["wheelbase"] = as24_wheelbase

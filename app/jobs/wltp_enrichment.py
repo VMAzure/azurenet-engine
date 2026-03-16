@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 from sqlalchemy import text
 
@@ -254,7 +254,7 @@ def wltp_enrichment_worker():
             except Exception:
                 logger.exception("[WLTP] %s FAILED", codice)
 
-        db.commit()
+        # DBSession.__exit__ esegue il commit automaticamente
 
     logger.info("[WLTP] DONE")
 

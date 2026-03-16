@@ -1,5 +1,5 @@
-﻿import logging
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -97,75 +97,81 @@ def autoscout_sync_job():
     # 0️⃣ DELETE_REQUIRED — PRIORITÀ ASSOLUTA
     # ============================================================
 
-    delete_listings = session.execute(
-        text("""
-            SELECT *
-            FROM autoscout_listings
-            WHERE status = 'DELETE_REQUIRED'
-            ORDER BY requested_at
-            FOR UPDATE SKIP LOCKED
-            LIMIT :limit
-        """),
-        {"limit": BATCH_SIZE},
-    ).mappings().all()
-
-    for listing in delete_listings:
-        listing_id = listing["id"]
-        dealer_id = listing["dealer_id"]
-        id_auto = listing["id_auto"]
-
-        logger.info(
-            "[AUTOSCOUT_DELETE] Preso record | listing_id=%s dealer_id=%s id_auto=%s",
-            listing_id,
-            dealer_id,
-            id_auto,
-        )
-
-        config = session.execute(
+    try:
+        delete_listings = session.execute(
             text("""
                 SELECT *
-                FROM autoscout_dealer_config
-                WHERE dealer_id = :dealer_id
-                  AND enabled = true
+                FROM autoscout_listings
+                WHERE status = 'DELETE_REQUIRED'
+                ORDER BY requested_at
+                FOR UPDATE SKIP LOCKED
+                LIMIT :limit
             """),
-            {"dealer_id": dealer_id},
-        ).mappings().first()
+            {"limit": BATCH_SIZE},
+        ).mappings().all()
 
-        if not config:
-            logger.error(
-                "[AUTOSCOUT_DELETE] Config dealer mancante | dealer_id=%s",
+        for listing in delete_listings:
+            listing_id = listing["id"]
+            dealer_id = listing["dealer_id"]
+            id_auto = listing["id_auto"]
+
+            logger.info(
+                "[AUTOSCOUT_DELETE] Preso record | listing_id=%s dealer_id=%s id_auto=%s",
+                listing_id,
                 dealer_id,
+                id_auto,
             )
+
+            config = session.execute(
+                text("""
+                    SELECT *
+                    FROM autoscout_dealer_config
+                    WHERE dealer_id = :dealer_id
+                      AND enabled = true
+                """),
+                {"dealer_id": dealer_id},
+            ).mappings().first()
+
+            if not config:
+                logger.error(
+                    "[AUTOSCOUT_DELETE] Config dealer mancante | dealer_id=%s",
+                    dealer_id,
+                )
+                session.execute(
+                    text("DELETE FROM autoscout_listings WHERE id = :id"),
+                    {"id": listing_id},
+                )
+                session.commit()
+                continue
+
+            customer_id = resolve_customer_id(config["customer_id"])
+            listing_id_remote = listing.get("listing_id")
+
+            if listing_id_remote:
+                try:
+                    delete_listing(
+                        customer_id=customer_id,
+                        listing_id=listing_id_remote,
+                        test_mode=config["test_mode"],
+                    )
+                except AutoScoutClientError as exc:
+                    logger.warning(
+                        "[AUTOSCOUT_DELETE] DELETE non confermato AS24 | listing_id=%s | err=%s",
+                        listing_id_remote,
+                        exc,
+                    )
+
             session.execute(
                 text("DELETE FROM autoscout_listings WHERE id = :id"),
                 {"id": listing_id},
             )
             session.commit()
-            continue
 
-        customer_id = resolve_customer_id(config["customer_id"])
-        listing_id_remote = listing.get("listing_id")
-
-        if listing_id_remote:
-            try:
-                delete_listing(
-                    customer_id=customer_id,
-                    listing_id=listing_id_remote,
-                    test_mode=config["test_mode"],
-                )
-            except AutoScoutClientError as exc:
-                logger.warning(
-                    "[AUTOSCOUT_DELETE] DELETE non confermato AS24 | listing_id=%s | err=%s",
-                    listing_id_remote,
-                    exc,
-                )
-
-        session.execute(
-            text("DELETE FROM autoscout_listings WHERE id = :id"),
-            {"id": listing_id},
-        )
-        session.commit()
-
+    except Exception:
+        logger.exception("[AUTOSCOUT_SYNC] Errore nel loop DELETE_REQUIRED")
+        session.rollback()
+        session.close()
+        return
 
     try:
         # ------------------------------------------------------------
@@ -202,78 +208,6 @@ def autoscout_sync_job():
                 dealer_id,
                 id_auto,
             )
-            # ------------------------------------------------------------
-            # 🗑️ DELETE REQUIRED — auto venduta
-            # ------------------------------------------------------------
-            if listing["status"] == "DELETE_REQUIRED":
-
-                # 🔴 carica config dealer (serve per test_mode + sellId)
-                config = session.execute(
-                    text("""
-                        SELECT *
-                        FROM autoscout_dealer_config
-                        WHERE dealer_id = :dealer_id
-                          AND enabled = true
-                    """),
-                    {"dealer_id": dealer_id},
-                ).mappings().first()
-
-                if not config:
-                    raise RuntimeError("Configurazione AutoScout dealer mancante (DELETE)")
-
-                sell_id = config["customer_id"]
-                customer_id = resolve_customer_id(sell_id)
-
-                listing_id_remote = listing.get("listing_id")
-
-                if not listing_id_remote:
-                    logger.info(
-                        "[AUTOSCOUT_DELETE] Nessun listing remoto da eliminare | id_auto=%s",
-                        id_auto,
-                    )
-
-                    session.execute(
-                        text("""
-                            DELETE FROM autoscout_listings
-                            WHERE id = :id
-                        """),
-                        {"id": listing_id},
-                    )
-                    session.commit()
-                    continue
-
-                logger.info(
-                    "[AUTOSCOUT_DELETE] DELETE listing AS24 | listing_id=%s test_mode=%s",
-                    listing_id_remote,
-                    config["test_mode"],
-                )
-
-                try:
-                    delete_listing(
-                        customer_id=customer_id,
-                        listing_id=listing_id_remote,
-                        test_mode=config["test_mode"],
-                    )
-                except AutoScoutClientError as exc:
-                    logger.warning(
-                        "[AUTOSCOUT_DELETE] DELETE non confermato AS24, ma considero completato | listing_id=%s | err=%s",
-                        listing_id_remote,
-                        exc,
-                    )
-
-                # SEMPRE rimuovere il record locale
-                session.execute(
-                    text("""
-                        DELETE FROM autoscout_listings
-                        WHERE id = :id
-                    """),
-                    {"id": listing_id},
-                )
-
-                session.commit()
-                continue
-
-
 
             try:
                 # ------------------------------------------------------------
@@ -555,6 +489,11 @@ def autoscout_sync_job():
                         {"codice": auto["codice_motornet"]},
                     ).mappings().first()
 
+                    if not det_vic:
+                        raise RuntimeError(
+                            f"Dettagli VIC mancanti (mnet_vcom_dettagli): codice={auto['codice_motornet']}"
+                        )
+
                     fuel_row = session.execute(
                         text("""
                             SELECT
@@ -569,12 +508,6 @@ def autoscout_sync_job():
                     if fuel_row:
                         as24_primary_fuel_type = fuel_row["as24_primary_fuel_type"]
                         as24_fuel_category = fuel_row["as24_fuel_category"]
-
-
-                    if not det_vic:
-                        raise RuntimeError(
-                            f"Dettagli VIC mancanti (mnet_vcom_dettagli): codice={auto['codice_motornet']}"
-                        )
                     if mapping["as24_vehicle_type"] == "X":
 
                         as24_power = _to_int(det_vic["kw"])
@@ -1178,7 +1111,7 @@ def autoscout_sync_job():
                         """),
                         {
                             "error": err_str,
-                            "now": datetime.utcnow(),
+                            "now": datetime.now(timezone.utc),
                             "id": listing_id,
                         },
                     )
