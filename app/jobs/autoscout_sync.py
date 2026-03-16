@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 from datetime import datetime
 
 from sqlalchemy import text
@@ -22,7 +22,7 @@ from app.external.autoscout_payload import build_minimal_payload
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 5 
+BATCH_SIZE = 5
 
 def normalize_sliding_door_equipment(equipment_ids: list[int]) -> list[int]:
     """
@@ -153,12 +153,30 @@ def autoscout_sync_job():
                     listing_id=listing_id_remote,
                     test_mode=config["test_mode"],
                 )
-            except AutoScoutClientError as exc:
+            except Exception as exc:
                 logger.warning(
-                    "[AUTOSCOUT_DELETE] DELETE non confermato AS24 | listing_id=%s | err=%s",
+                    "[AUTOSCOUT_DELETE] DELETE non confermato AS24, mantengo stato per retry | listing_id=%s | err=%s",
                     listing_id_remote,
                     exc,
                 )
+                session.execute(
+                    text("""
+                        UPDATE autoscout_listings
+                        SET
+                            status = 'ERROR',
+                            last_error = :error,
+                            retry_count = retry_count + 1,
+                            last_attempt_at = :now
+                        WHERE id = :id
+                    """),
+                    {
+                        "id": listing_id,
+                        "error": str(exc),
+                        "now": datetime.utcnow(),
+                    },
+                )
+                session.commit()
+                continue
 
         session.execute(
             text("DELETE FROM autoscout_listings WHERE id = :id"),
@@ -254,14 +272,31 @@ def autoscout_sync_job():
                         listing_id=listing_id_remote,
                         test_mode=config["test_mode"],
                     )
-                except AutoScoutClientError as exc:
+                except Exception as exc:
                     logger.warning(
-                        "[AUTOSCOUT_DELETE] DELETE non confermato AS24, ma considero completato | listing_id=%s | err=%s",
+                        "[AUTOSCOUT_DELETE] DELETE non confermato AS24, mantengo stato per retry | listing_id=%s | err=%s",
                         listing_id_remote,
                         exc,
                     )
+                    session.execute(
+                        text("""
+                            UPDATE autoscout_listings
+                            SET
+                                status = 'ERROR',
+                                last_error = :error,
+                                retry_count = retry_count + 1,
+                                last_attempt_at = :now
+                            WHERE id = :id
+                        """),
+                        {
+                            "id": listing_id,
+                            "error": str(exc),
+                            "now": datetime.utcnow(),
+                        },
+                    )
+                    session.commit()
+                    continue
 
-                # SEMPRE rimuovere il record locale
                 session.execute(
                     text("""
                         DELETE FROM autoscout_listings
@@ -555,6 +590,11 @@ def autoscout_sync_job():
                         {"codice": auto["codice_motornet"]},
                     ).mappings().first()
 
+                    if not det_vic:
+                        raise RuntimeError(
+                            f"Dettagli VIC mancanti (mnet_vcom_dettagli): codice={auto['codice_motornet']}"
+                        )
+
                     fuel_row = session.execute(
                         text("""
                             SELECT
@@ -569,12 +609,6 @@ def autoscout_sync_job():
                     if fuel_row:
                         as24_primary_fuel_type = fuel_row["as24_primary_fuel_type"]
                         as24_fuel_category = fuel_row["as24_fuel_category"]
-
-
-                    if not det_vic:
-                        raise RuntimeError(
-                            f"Dettagli VIC mancanti (mnet_vcom_dettagli): codice={auto['codice_motornet']}"
-                        )
                     if mapping["as24_vehicle_type"] == "X":
 
                         as24_power = _to_int(det_vic["kw"])
@@ -1155,7 +1189,10 @@ def autoscout_sync_job():
                     )
 
                     session.commit()
-                    continue
+                    logger.warning(
+                        "[AUTOSCOUT_CREATE] Batch interrotto dopo rollback per evitare race su lock rilasciati"
+                    )
+                    break
 
                 # ------------------------------------------------------------
                 # ❌ ERRORE GENERICO
@@ -1190,7 +1227,10 @@ def autoscout_sync_job():
                         listing_id,
                     )
 
-                continue
+                logger.warning(
+                    "[AUTOSCOUT_CREATE] Batch interrotto dopo rollback per evitare race su lock rilasciati"
+                )
+                break
 
 
     except Exception:

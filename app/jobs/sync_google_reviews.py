@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import hashlib
 import os
 import requests
@@ -48,11 +48,11 @@ def compute_review_hash(author: str, rating: int, text: str) -> str:
 
 
 def sync_dealer_reviews(dealer_id: int):
-    db: Session = SessionLocal()
-
     if not GOOGLE_API_KEY:
         logging.error("[REVIEWS] GOOGLE_API_KEY non configurata")
         return
+
+    db: Session = SessionLocal()
 
     try:
         dealer = db.query(DealerPublic).filter(DealerPublic.id == dealer_id).first()

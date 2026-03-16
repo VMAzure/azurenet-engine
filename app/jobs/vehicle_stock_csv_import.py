@@ -1,17 +1,14 @@
-﻿import csv
+import csv
 import io
 import logging
 from datetime import datetime
 
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import engine
 from app.storage import download_bytes
 
 logger = logging.getLogger(__name__)
-
-from datetime import datetime
 
 import re
 
@@ -55,15 +52,21 @@ def vehicle_stock_csv_import_job():
 
     with engine.begin() as conn:
         # --------------------------------------------------
-        # 1️⃣ Trova un import pending
+        # 1️⃣ Claim atomico import pending (race-safe)
         # --------------------------------------------------
         import_row = conn.execute(
             text("""
-                select *
-                from public.vehicle_stock_imports
-                where status = 'pending'
-                order by created_at
-                limit 1
+                update public.vehicle_stock_imports
+                set status = 'processing'
+                where id = (
+                    select id
+                    from public.vehicle_stock_imports
+                    where status = 'pending'
+                    order by created_at
+                    for update skip locked
+                    limit 1
+                )
+                returning id, file_path
             """)
         ).mappings().first()
 
@@ -75,18 +78,6 @@ def vehicle_stock_csv_import_job():
         file_path = import_row["file_path"]
 
         logger.info(f"[CSV IMPORT] processing import {import_id}")
-
-        # --------------------------------------------------
-        # 2️⃣ Lock logico
-        # --------------------------------------------------
-        conn.execute(
-            text("""
-                update public.vehicle_stock_imports
-                set status = 'processing'
-                where id = :id
-            """),
-            {"id": import_id},
-        )
 
     # --------------------------------------------------
     # 3️⃣ Scarica CSV (fuori dalla transazione)
@@ -115,24 +106,24 @@ def vehicle_stock_csv_import_job():
         _fail_import(import_id, f"CSV parse failed: {e}")
         return
 
-    with engine.begin() as conn:
-        for row in reader:
-            rows_total += 1
+    try:
+        with engine.begin() as conn:
+            for row in reader:
+                rows_total += 1
 
-            if not any(row.values()):
-                rows_skipped += 1
-                continue
-
-
-            try:
-                external_id = row.get("ID MyGarage")
-                if not external_id:
+                if not any(row.values()):
                     rows_skipped += 1
                     continue
 
-                with conn.begin_nested():
-                    result = conn.execute(
-                        text("""
+                try:
+                    external_id = (row.get("ID MyGarage") or "").strip()
+                    if not external_id:
+                        rows_skipped += 1
+                        continue
+
+                    with conn.begin_nested():
+                        result = conn.execute(
+                            text("""
                             insert into public.vehicles_stock_sale (
                                 external_id,
                                 vid,
@@ -254,97 +245,98 @@ def vehicle_stock_csv_import_job():
 
                                 is_active = true
                             returning (xmax = 0) as inserted
-                        """),
-                        {
-                            "external_id": row.get("ID MyGarage"),
-                            "vid": row.get("VID"),
-                            "targa": row.get("Targa"),
-                            "vin": row.get("Telaio"),
-                            "raw_linea": row.get("Linea"),
-                            "raw_status": row.get("Status"),
-                            "raw_stato": row.get("Stato"),
-                            "cod_versione_cm": normalize_cod_versione_cm(
-                                row.get("Cod.Versione CM")
-                            ),
-                            "brand": row.get("Marca"),
-                            "model": row.get("Modello"),
-                            "version": row.get("Versione"),
-                            "description": row.get("Descrizione"),
-                            "vehicle_category": row.get("Veicolo comm."),
-                            "kilometers": _parse_int(row.get("Chilometri")),
-                            "first_registration_date": _parse_date(row.get("Immatricolazione")),
-                            "fuel_type": row.get("Alimentazione"),
-                            "body_type": row.get("Tipo carrozzeria"),
-                            "color_ext": row.get("Colore esterni"),
-                            "color_int": row.get("Interni"),
-                            "price_public": _parse_price(row.get("Prezzo Internet")),
-                            "price_showroom": _parse_price(row.get("Prezzo Showroom")),
-                            "price_internal": _parse_price(row.get("Prezzo veicolo")),
-                            "location": row.get("Ubicazione"),
-                            "arrival_date": _parse_date(row.get("Data di arrivo")),
-                            "expected_arrival_date": _parse_date(row.get("Data prev. di arrivo")),
-                            "images_count": _parse_int(row.get("Immagini")) or 0,
-                            "main_image_url": row.get("Immagine"),
-                            "last_import_id": import_id,
-                            "dealer": row.get("Dealer"),
-                            "order_number": row.get("Nr.Ordine"),
-                            "stock_flag": row.get("Stock"),
-                            "vehicle_type_raw": row.get("Tipo"),
-                            "price_reserved_1": _parse_price(row.get("Prezzo riservato 1")),
-                            "price_reserved_2": _parse_price(row.get("Prezzo riservato 2")),
-                            "confirmation_week": row.get("Sett.di conferma"),
+                            """),
+                            {
+                                "external_id": external_id,
+                                "vid": row.get("VID"),
+                                "targa": row.get("Targa"),
+                                "vin": row.get("Telaio"),
+                                "raw_linea": row.get("Linea"),
+                                "raw_status": row.get("Status"),
+                                "raw_stato": row.get("Stato"),
+                                "cod_versione_cm": normalize_cod_versione_cm(
+                                    row.get("Cod.Versione CM")
+                                ),
+                                "brand": row.get("Marca"),
+                                "model": row.get("Modello"),
+                                "version": row.get("Versione"),
+                                "description": row.get("Descrizione"),
+                                "vehicle_category": row.get("Veicolo comm."),
+                                "kilometers": _parse_int(row.get("Chilometri")),
+                                "first_registration_date": _parse_date(row.get("Immatricolazione")),
+                                "fuel_type": row.get("Alimentazione"),
+                                "body_type": row.get("Tipo carrozzeria"),
+                                "color_ext": row.get("Colore esterni"),
+                                "color_int": row.get("Interni"),
+                                "price_public": _parse_price(row.get("Prezzo Internet")),
+                                "price_showroom": _parse_price(row.get("Prezzo Showroom")),
+                                "price_internal": _parse_price(row.get("Prezzo veicolo")),
+                                "location": row.get("Ubicazione"),
+                                "arrival_date": _parse_date(row.get("Data di arrivo")),
+                                "expected_arrival_date": _parse_date(row.get("Data prev. di arrivo")),
+                                "images_count": _parse_int(row.get("Immagini")) or 0,
+                                "main_image_url": row.get("Immagine"),
+                                "last_import_id": import_id,
+                                "dealer": row.get("Dealer"),
+                                "order_number": row.get("Nr.Ordine"),
+                                "stock_flag": row.get("Stock"),
+                                "vehicle_type_raw": row.get("Tipo"),
+                                "price_reserved_1": _parse_price(row.get("Prezzo riservato 1")),
+                                "price_reserved_2": _parse_price(row.get("Prezzo riservato 2")),
+                                "confirmation_week": row.get("Sett.di conferma"),
+                            },
+                        ).scalar()
 
-                        },
-                    ).scalar()
+                        if result:
+                            rows_inserted += 1
+                        else:
+                            rows_updated += 1
 
+                except Exception:
+                    rows_skipped += 1
+                    logger.exception(
+                        f"[CSV IMPORT] row skipped (external_id={external_id})"
+                    )
 
+        # --------------------------------------------------
+        # 5️⃣ Finalizza import
+        # --------------------------------------------------
+        with engine.begin() as conn:
 
-                    if result:
-                        rows_inserted += 1
-                    else:
-                        rows_updated += 1
+            # DELETE auto non più presenti nel CSV della stessa sorgente
+            conn.execute(
+                text("""
+                    delete from public.vehicles_stock_sale
+                    where source = 'mygarage'
+                      and last_import_id is distinct from :import_id
+                """),
+                {"import_id": import_id},
+            )
 
-            except Exception:
-                rows_skipped += 1
-                logger.exception(
-                    f"[CSV IMPORT] row skipped (external_id={external_id})"
-                )
-
-
-    # --------------------------------------------------
-    # 5️⃣ Finalizza import
-    # --------------------------------------------------
-    with engine.begin() as conn:
-
-        # DELETE auto non più presenti nel CSV
-        conn.execute(
-            text("""
-                delete from public.vehicles_stock_sale
-                where last_import_id is distinct from :import_id
-            """),
-            {"import_id": import_id},
-        )
-
-        # Finalizza import
-        conn.execute(
-            text("""
-                update public.vehicle_stock_imports
-                set status = 'done',
-                    rows_total = :rows_total,
-                    rows_inserted = :rows_inserted,
-                    rows_updated = :rows_updated,
-                    rows_skipped = :rows_skipped,
-                    processed_at = now()
-                where id = :id
-            """),
-            {
-                "id": import_id,
-                "rows_total": rows_total,
-                "rows_inserted": rows_inserted,
-                "rows_updated": rows_updated,
-                "rows_skipped": rows_skipped,
-            },
-        )
+            # Finalizza import
+            conn.execute(
+                text("""
+                    update public.vehicle_stock_imports
+                    set status = 'done',
+                        rows_total = :rows_total,
+                        rows_inserted = :rows_inserted,
+                        rows_updated = :rows_updated,
+                        rows_skipped = :rows_skipped,
+                        processed_at = now()
+                    where id = :id
+                """),
+                {
+                    "id": import_id,
+                    "rows_total": rows_total,
+                    "rows_inserted": rows_inserted,
+                    "rows_updated": rows_updated,
+                    "rows_skipped": rows_skipped,
+                },
+            )
+    except Exception as e:
+        _fail_import(import_id, f"Import processing failed: {e}")
+        logger.exception("[CSV IMPORT] fatal processing error")
+        return
 
     logger.info(
         f"[CSV IMPORT] import {import_id} completed: "
