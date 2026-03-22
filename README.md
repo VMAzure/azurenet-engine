@@ -9,6 +9,7 @@ Dedicated data synchronization engine for vehicle data.
 - Sync auto usate
 - Sync VIC nuovo
 - Sync VIC usato
+- Sync recensioni Google (`app/jobs/sync_google_reviews.py`): solo dealer con `dealer_public.google_place_id` valorizzato da DealerMax/admin; **nessuna** risoluzione automatica del place id. Job schedulato giornaliero in `app/scheduler.py`.
 
 ## Explicitly NOT included
 - No API runtime

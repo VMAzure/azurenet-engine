@@ -1,14 +1,13 @@
-﻿import logging
+import logging
 import hashlib
 import os
 import requests
 from datetime import datetime
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
 from app.database import SessionLocal
-from app.models import DealerPublic, DealerReview  # ti dirò sotto cosa aggiungere
+from app.models import DealerPublic, DealerReview
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -30,7 +29,11 @@ def google_reviews_sync_job():
         dealer_ids = [
             d.id
             for d in db.query(DealerPublic.id)
-            .filter(DealerPublic.is_active == True)
+            .filter(
+                DealerPublic.is_active == True,
+                DealerPublic.google_place_id.isnot(None),
+                DealerPublic.google_place_id != "",
+            )
             .all()
         ]
 
@@ -61,88 +64,60 @@ def sync_dealer_reviews(dealer_id: int):
             logging.warning(f"[REVIEWS] Dealer {dealer_id} non trovato")
             return
 
-        # --- ENSURE PLACE ID ---
-        if not dealer.google_place_id:
-            logging.info(f"[REVIEWS] Resolving place_id for dealer_id={dealer_id}")
+        place_id = (dealer.google_place_id or "").strip()
+        if not place_id:
+            logging.info(
+                f"[REVIEWS] Skip dealer_id={dealer_id}: nessun google_place_id — "
+                "impostalo da DealerMax (Impostazioni / registrazione). Nessuna risoluzione automatica."
+            )
+            return
 
-            query = f"{dealer.ragione_sociale} {dealer.indirizzo} {dealer.cap} {dealer.citta}"
-            logging.info(f"[REVIEWS] Google query: {query}")
+        # --------------------------------------------------
+        # GEO (solo con place id esplicito dal dealer / admin)
+        # --------------------------------------------------
+        logging.info(f"[REVIEWS] GEO check dealer_id={dealer_id}")
 
-            search_url = "https://places.googleapis.com/v1/places:searchText"
+        geo_url = f"https://places.googleapis.com/v1/places/{place_id}"
 
-            headers = {
-                "Content-Type": "application/json",
-                "X-Goog-Api-Key": GOOGLE_API_KEY,
-                "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress"
-            }
+        headers = {
+            "X-Goog-Api-Key": GOOGLE_API_KEY,
+            "X-Goog-FieldMask": "location,googleMapsUri"
+        }
 
-            payload = {
-                "textQuery": query,
-                "languageCode": "it"
-            }
+        params = {
+            "languageCode": "it"
+        }
 
-            try:
-                res = requests.post(search_url, headers=headers, json=payload, timeout=10)
-                res.raise_for_status()
-                data = res.json()
+        res = requests.get(
+            geo_url,
+            headers=headers,
+            params=params,
+            timeout=10
+        )
 
-                places = data.get("places", [])
+        res.raise_for_status()
+        geo_data = res.json()
 
-                logging.info(f"[REVIEWS] Google returned {len(places)} places")
+        logging.info(f"[REVIEWS] GEO RAW: {geo_data}")
 
-                if not places:
-                    logging.warning(f"[REVIEWS] No place found for dealer_id={dealer_id}")
-                    return
+        location = geo_data.get("location")
 
-                first = places[0]
+        if location:
+            dealer.latitude = float(location.get("latitude"))
+            dealer.longitude = float(location.get("longitude"))
 
-                logging.info(
-                    f"[REVIEWS] Selected place_id={first.get('id')} "
-                    f"name={first.get('displayName', {}).get('text')} "
-                    f"address={first.get('formattedAddress')}"
-                )
+        if geo_data.get("googleMapsUri"):
+            dealer.google_maps_url = geo_data["googleMapsUri"]
 
-                dealer.google_place_id = first.get("id")
-                db.commit()
-                db.refresh(dealer)
+        db.commit()
 
-            except Exception:
-                logging.exception(f"[REVIEWS] Failed resolving place_id for dealer_id={dealer_id}")
-                return
-
-                # --- ENSURE GEO ---
-        if dealer.google_place_id and not dealer.latitude:
-            geo_url = f"https://places.googleapis.com/v1/places/{dealer.google_place_id}"
-
-            headers = {
-                "X-Goog-Api-Key": GOOGLE_API_KEY,
-                "X-Goog-FieldMask": "location"
-            }
-
-            try:
-                res = requests.get(geo_url, headers=headers, timeout=10)
-                res.raise_for_status()
-                geo_data = res.json()
-
-                location = geo_data.get("location")
-                logging.info(f"[REVIEWS] Geo raw response: {location}")
-
-                if location:
-                    dealer.latitude = location.get("latitude")
-                    dealer.longitude = location.get("longitude")
-                    dealer.google_maps_url = f"https://www.google.com/maps/place/?q=place_id:{dealer.google_place_id}"
-                    db.commit()
-
-                    logging.info(
-                        f"[REVIEWS] Geo saved lat={dealer.latitude} lng={dealer.longitude}"
-                    )
-
-            except Exception:
-                logging.exception(f"[REVIEWS] Failed resolving geo for dealer_id={dealer_id}")
+        logging.info(
+            f"[REVIEWS] GEO updated lat={dealer.latitude} lng={dealer.longitude}"
+        )
 
         logging.info(f"[REVIEWS] Sync dealer_id={dealer_id}")
 
-        url = GOOGLE_PLACE_URL.format(dealer.google_place_id)
+        url = GOOGLE_PLACE_URL.format(place_id)
 
         params = {
             "languageCode": "it",
@@ -257,7 +232,10 @@ def main():
         elif args.all:
             dealers = (
                 db.query(DealerPublic)
-                .filter(DealerPublic.google_place_id.isnot(None))
+                .filter(
+                    DealerPublic.google_place_id.isnot(None),
+                    DealerPublic.google_place_id != "",
+                )
                 .all()
             )
 

@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 from datetime import datetime
 
 from sqlalchemy import text
@@ -577,7 +577,9 @@ def autoscout_sync_job():
                         )
                     if mapping["as24_vehicle_type"] == "X":
 
-                        as24_power = _to_int(det_vic["kw"])
+                        as24_power = _to_int(
+                            auto.get("kw_override") if auto.get("kw_override") is not None else det_vic["kw"]
+                        )
                         as24_cylinder_capacity = _to_int(det_vic["cilindrata"])
                         as24_seat_count = _to_int(det_vic["posti"])
                         as24_door_count = _to_int(det_vic["porte"])
@@ -622,7 +624,11 @@ def autoscout_sync_job():
 
                 if mapping["as24_vehicle_type"] == "C":
 
-                    as24_power = _to_int(det_auto["kw"])
+                    as24_power = _to_int(
+                        auto.get("kw_override")
+                        if auto.get("kw_override") is not None
+                        else det_auto["kw"]
+                    )
                     as24_cylinder_capacity = _to_int(det_auto["cilindrata"])
                     as24_cylinder_count = _to_int(det_auto["cilindri"])
                     as24_empty_weight = _to_int(det_auto["peso_vuoto"])
