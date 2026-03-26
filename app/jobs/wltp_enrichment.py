@@ -5,10 +5,6 @@ from sqlalchemy import text
 from app.database import DBSession
 from app.external.motornet import motornet_get
 
-# ============================================================
-# CONFIG
-# ============================================================
-
 BATCH_SIZE = 20
 
 AUTO_WLTP_URL = (
@@ -23,9 +19,6 @@ VCOM_WLTP_URL = (
 
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# HELPERS
-# ============================================================
 
 def is_vcom(codice: str) -> bool:
     return codice.startswith("C0")
@@ -36,10 +29,6 @@ def build_wltp_url(codice: str) -> str:
         return VCOM_WLTP_URL.format(codice=codice)
     return AUTO_WLTP_URL.format(codice=codice)
 
-
-# ----------------------------
-# Normalizzazione WLTP
-# ----------------------------
 
 def normalize_eu_directive(raw: str | None) -> str | None:
     if not raw:
@@ -75,10 +64,6 @@ def resolve_directive_from_wltp(
     records: list[dict],
     anno_immatricolazione: int,
 ) -> str | None:
-    """
-    Regola congelata:
-    - WLTP valido se l'ANNO rientra nella finestra
-    """
     for r in records:
         start = r.get("dataInizioValidita")
         end = r.get("dataFineValidita")
@@ -98,10 +83,6 @@ def resolve_directive_from_wltp(
     return None
 
 
-# ----------------------------
-# Fallback legacy MNET
-# ----------------------------
-
 def normalize_legacy_euro(value: str | None) -> str | None:
     if not value:
         return None
@@ -114,11 +95,6 @@ def normalize_legacy_euro(value: str | None) -> str | None:
 
 
 def fetch_legacy_euro(db, codice: str) -> str | None:
-    """
-    AUTO  -> mnet_dettagli_usato.euro
-    VCOM  -> mnet_vcom_dettagli.euro
-    """
-
     if is_vcom(codice):
         row = db.execute(
             text("""
@@ -145,9 +121,22 @@ def fetch_legacy_euro(db, codice: str) -> str | None:
 
     return row[0]
 
-# ============================================================
-# WORKER
-# ============================================================
+
+async def fetch_all_wltp(rows: list[dict]) -> dict[str, list[dict] | Exception]:
+    results: dict[str, list[dict] | Exception] = {}
+
+    for row in rows:
+        codice = row["codice_motornet"]
+        url = build_wltp_url(codice)
+
+        try:
+            data = await motornet_get(url)
+            results[codice] = data.get("wltp", [])
+        except Exception as e:
+            results[codice] = e
+
+    return results
+
 
 def wltp_enrichment_worker():
     logger.info("[WLTP] START")
@@ -174,71 +163,46 @@ def wltp_enrichment_worker():
             logger.info("[WLTP] NOTHING TO DO")
             return
 
+        fetched = asyncio.run(fetch_all_wltp(rows))
+
         for row in rows:
             auto_id = row["id"]
             codice = row["codice_motornet"]
             anno = row["anno_immatricolazione"]
-
-            url = build_wltp_url(codice)
             tipo = "VCOM" if is_vcom(codice) else "AUTO"
 
             try:
                 logger.info("[WLTP] fetch %s (%s)", codice, tipo)
 
-                # --------------------
-                # 1) WLTP
-                # --------------------
-                records = []
+                directive = None
+                result = fetched[codice]
 
-                directive = None  # <<<<<< OBBLIGATORIO
-
-                try:
-                    try:
-                        data = asyncio.run(motornet_get(url))
-                    except RuntimeError as e:
-                        if "bound to a different event loop" in str(e):
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            data = loop.run_until_complete(motornet_get(url))
-                            loop.close()
-                        else:
-                            raise
-
-                    records = data.get("wltp", [])
-                    directive = resolve_directive_from_wltp(records, anno)
-
-                except RuntimeError as e:
-                    if "PRECONDITION_FAILED" in str(e) or "412" in str(e):
+                if isinstance(result, Exception):
+                    if "PRECONDITION_FAILED" in str(result) or "412" in str(result):
                         logger.info(
                             "[WLTP] %s: nessun record WLTP (412), fallback legacy",
                             codice,
                         )
                     else:
-                        raise
+                        raise result
+                else:
+                    directive = resolve_directive_from_wltp(result, anno)
 
-                # Fallback legacy (sempre sicuro)
                 if not directive:
                     legacy = fetch_legacy_euro(db, codice)
                     directive = normalize_legacy_euro(legacy)
 
-                # Persistenza
                 if directive:
-                    # caso risolto
                     db.execute(
                         text("""
                             UPDATE azlease_usatoauto
                             SET eu_emission_directive = :directive
                             WHERE id = :id
                         """),
-                        {
-                            "directive": directive,
-                            "id": auto_id,
-                        },
+                        {"directive": directive, "id": auto_id},
                     )
                     logger.info("[WLTP] %s → %s", codice, directive)
-
                 else:
-                    # caso IRRECUPERABILE → ND
                     db.execute(
                         text("""
                             UPDATE azlease_usatoauto
@@ -249,27 +213,9 @@ def wltp_enrichment_worker():
                     )
                     logger.info("[WLTP] %s → ND (non disponibile)", codice)
 
-
-
             except Exception:
                 logger.exception("[WLTP] %s FAILED", codice)
 
         db.commit()
 
     logger.info("[WLTP] DONE")
-
-# ============================================================
-# LOCAL ENTRYPOINT
-# ============================================================
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
-
-    try:
-        wltp_enrichment_worker()
-    except Exception as e:
-        logging.exception("WLTP worker crashed: %s", e)
-        raise

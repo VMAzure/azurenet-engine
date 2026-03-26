@@ -4,9 +4,9 @@ import logging
 import asyncio
 
 from typing import Any, Dict, Optional
+from weakref import WeakKeyDictionary
 
 import httpx
-from asyncio import Lock
 
 # ============================================================
 # CONFIG
@@ -23,6 +23,7 @@ CLIENT_ID = "webservice"
 USERNAME = os.getenv("MOTORN_CLIENT_ID")
 PASSWORD = os.getenv("MOTORN_CLIENT_SECRET")
 
+
 def _check_credentials() -> None:
     if not USERNAME or not PASSWORD:
         raise RuntimeError("Credenziali Motornet mancanti")
@@ -37,7 +38,20 @@ _refresh_token: Optional[str] = None
 _access_expiry: float = 0
 _refresh_expiry: float = 0
 
-_token_lock = Lock()
+# Un lock per ogni event loop attivo
+_loop_locks: "WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = WeakKeyDictionary()
+
+
+def _get_token_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _loop_locks.get(loop)
+
+    if lock is None:
+        lock = asyncio.Lock()
+        _loop_locks[loop] = lock
+
+    return lock
+
 
 # ============================================================
 # AUTH CALLS
@@ -45,7 +59,7 @@ _token_lock = Lock()
 
 async def _login() -> None:
     global _access_token, _refresh_token, _access_expiry, _refresh_expiry
-    
+
     _check_credentials()
 
     logging.info("[MOTORN] LOGIN (password)")
@@ -106,13 +120,14 @@ async def _refresh() -> bool:
     return True
 
 
-
 # ============================================================
 # TOKEN ACCESS (SAFE)
 # ============================================================
 
 async def get_access_token() -> str:
-    async with _token_lock:
+    lock = _get_token_lock()
+
+    async with lock:
         now = time.time()
 
         if _access_token and now < _access_expiry:
@@ -133,7 +148,6 @@ async def motornet_get(url: str, *, max_attempts: int = 3) -> Dict[str, Any]:
     _check_credentials()
 
     for attempt in range(1, max_attempts + 1):
-
         token = await get_access_token()
         headers = {
             "Authorization": f"Bearer {token}",
@@ -153,7 +167,8 @@ async def motornet_get(url: str, *, max_attempts: int = 3) -> Dict[str, Any]:
                 max_attempts,
             )
 
-            async with _token_lock:
+            lock = _get_token_lock()
+            async with lock:
                 if not await _refresh():
                     await _login()
 
@@ -171,4 +186,3 @@ async def motornet_get(url: str, *, max_attempts: int = 3) -> Dict[str, Any]:
         )
 
     raise RuntimeError("Motornet GET failed after retries")
-
