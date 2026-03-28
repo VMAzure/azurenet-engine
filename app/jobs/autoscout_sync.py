@@ -924,10 +924,21 @@ def autoscout_sync_job():
                     as24_has_full_service_history = False
 
                 # ------------------------------------------------------------
-                # 5.x️⃣ Resolve Warranty AS24 (mesi)
+                # 5.x️⃣ Resolve Warranty AS24 (mesi) — da dealer (azlease_usatoauto)
                 # ------------------------------------------------------------
 
-                as24_warranty_months = 12  # decisione commerciale dealer
+                as24_warranty_months = None
+                ew = auto.get("extended_warranty_enabled")
+                months_raw = auto.get("extended_warranty_months")
+                if ew and months_raw is not None:
+                    try:
+                        mi = int(months_raw)
+                        if mi > 0:
+                            as24_warranty_months = mi
+                    except (TypeError, ValueError):
+                        as24_warranty_months = None
+
+                vehicle_damaged = bool(auto.get("vehicle_damaged"))
                 
                 # ------------------------------------------------------------
                 # 5.x️⃣ Resolve Previous Owner Count (AS24)
@@ -1083,7 +1094,7 @@ def autoscout_sync_job():
                     as24_width=as24_width,
                     as24_height=as24_height,
                     as24_wheelbase=as24_wheelbase,
-
+                    vehicle_damaged=vehicle_damaged,
 
                     
                     # Equipment

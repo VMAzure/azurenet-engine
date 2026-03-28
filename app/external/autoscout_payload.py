@@ -1,4 +1,4 @@
-﻿from datetime import date, datetime
+from datetime import date, datetime
 import re
 
 
@@ -69,6 +69,7 @@ def build_minimal_payload(
     as24_width: int | None = None,
     as24_height: int | None = None,
     as24_wheelbase: int | None = None,
+    vehicle_damaged: bool = False,
 
 
 
@@ -83,6 +84,8 @@ def build_minimal_payload(
     - IVA gestita correttamente via PublicPrice
     - fuel (primaryFuelType + fuelCategory) risolti a monte
     - transmission risolto a monte (AS24 enum)
+    - condition.hadAccident da flag dealer (vehicle_damaged)
+    - warranty (mesi) solo se valorizzato a monte
 
     """
     if vehicle_type == "C":
@@ -370,7 +373,7 @@ def build_minimal_payload(
 
 
     payload["condition"] = {
-        "hadAccident": False
+        "hadAccident": bool(vehicle_damaged),
     }
     # Nazionalità veicolo (decisione temporanea)
     payload["countryVersion"] = "IT"
