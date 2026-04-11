@@ -25,6 +25,8 @@ from app.jobs.usato import (
 from app.jobs.wltp_enrichment import wltp_enrichment_worker
 from app.jobs.vehicle_stock_csv_import import vehicle_stock_csv_import_job
 from app.jobs.sync_google_reviews import google_reviews_sync_job
+from app.jobs.sync_news import sync_news_job
+from app.jobs.rewrite_news import rewrite_news_job
 
 from app.jobs.sync_motornet_immagini_fill import run as sync_nuovo_immagini_fill
 from app.jobs.queue_modelli_missing import run as queue_modelli_missing
@@ -310,6 +312,27 @@ def build_scheduler():
     schedule_reviews_jobs(scheduler)
     logging.info("[SCHEDULER] GOOGLE REVIEWS jobs registered")
 
+    # registra NEWS SYNC
+    scheduler.add_job(
+        func=sync_news_job,
+        trigger=CronTrigger(hour=2, minute=30),  # ogni notte 02:30
+        id="news_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    logging.info("[SCHEDULER] NEWS SYNC job registered")
+
+    # registra REWRITE NEWS (1 ora dopo il fetch)
+    scheduler.add_job(
+        func=rewrite_news_job,
+        trigger=CronTrigger(hour=3, minute=30),
+        id="news_rewrite",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    logging.info("[SCHEDULER] NEWS REWRITE job registered")
 
     return scheduler
 
