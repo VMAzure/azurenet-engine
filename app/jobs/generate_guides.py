@@ -328,88 +328,95 @@ def run(topic_filter: str | None = None, limit: int | None = None, dry_run: bool
         return
 
     client = OpenAI(api_key=OPENAI_API_KEY)
-    db = SessionLocal()
     done = 0
     skipped = 0
     failed = 0
     flagged = 0
 
-    try:
-        for g in filtered:
-            slug = _slugify(g["h1"])
-            # Dedup: se esiste già e non force, skippa
+    for g in filtered:
+        slug = _slugify(g["h1"])
+
+        # Check existing (short-lived session)
+        db = SessionLocal()
+        try:
             existing = db.execute(
                 text("SELECT id FROM dealer_guide WHERE slug = :s"),
                 {"s": slug},
             ).fetchone()
-            if existing and not force:
-                logging.info(f"[GUIDE] skip (già esiste): {slug}")
-                skipped += 1
-                continue
+        finally:
+            db.close()
 
-            logging.info(f"[GUIDE] generating: {g['h1']}")
-            result = generate_guide(client, g)
-            if not result:
-                failed += 1
-                continue
+        if existing and not force:
+            logging.info(f"[GUIDE] skip (già esiste): {slug}")
+            skipped += 1
+            continue
 
-            try:
-                if existing and force:
-                    db.execute(
-                        text("""
-                            UPDATE dealer_guide
-                            SET h1 = :h1,
-                                meta_description = :meta,
-                                body_html = :body,
-                                needs_human_review = :flag,
-                                manual_version = manual_version + 1,
-                                updated_at = NOW()
-                            WHERE id = :id
-                        """),
-                        {
-                            "h1": result["h1"],
-                            "meta": result.get("meta_description"),
-                            "body": result["body_html"],
-                            "flag": bool(result.get("needs_human_review")),
-                            "id": str(existing.id),
-                        },
-                    )
-                else:
-                    db.execute(
-                        text("""
-                            INSERT INTO dealer_guide
-                                (language, topic, slug, h1, meta_description, body_html,
-                                 sort_order, is_active, needs_human_review)
-                            VALUES
-                                ('it', :topic, :slug, :h1, :meta, :body,
-                                 :sort, TRUE, :flag)
-                        """),
-                        {
-                            "topic": g["topic"],
-                            "slug": slug,
-                            "h1": result["h1"],
-                            "meta": result.get("meta_description"),
-                            "body": result["body_html"],
-                            "sort": 100 + done * 10,
-                            "flag": bool(result.get("needs_human_review")),
-                        },
-                    )
-                db.commit()
-                done += 1
-                if result.get("needs_human_review"):
-                    flagged += 1
-                logging.info(
-                    f"[GUIDE] ok: {slug} confidence={result['confidence']} "
-                    f"flag={result.get('needs_human_review')} "
-                    f"words={len(result['body_html'].split())}"
+        # Chiamata OpenAI FUORI dalla transazione DB (~70 sec, superiore al timeout idle)
+        logging.info(f"[GUIDE] generating: {g['h1']}")
+        result = generate_guide(client, g)
+        if not result:
+            failed += 1
+            continue
+
+        # Session nuova per insert/update (short-lived)
+        db = SessionLocal()
+        try:
+            if existing and force:
+                db.execute(
+                    text("""
+                        UPDATE dealer_guide
+                        SET h1 = :h1,
+                            meta_description = :meta,
+                            body_html = :body,
+                            needs_human_review = :flag,
+                            manual_version = manual_version + 1,
+                            updated_at = NOW()
+                        WHERE id = :id
+                    """),
+                    {
+                        "h1": result["h1"],
+                        "meta": result.get("meta_description"),
+                        "body": result["body_html"],
+                        "flag": bool(result.get("needs_human_review")),
+                        "id": str(existing.id),
+                    },
                 )
-            except Exception:
-                db.rollback()
-                logging.exception(f"[GUIDE] DB insert failed for {slug}")
-                failed += 1
-                continue
-    finally:
-        db.close()
+            else:
+                db.execute(
+                    text("""
+                        INSERT INTO dealer_guide
+                            (language, topic, slug, h1, meta_description, body_html,
+                             sort_order, is_active, needs_human_review)
+                        VALUES
+                            ('it', :topic, :slug, :h1, :meta, :body,
+                             :sort, TRUE, :flag)
+                    """),
+                    {
+                        "topic": g["topic"],
+                        "slug": slug,
+                        "h1": result["h1"],
+                        "meta": result.get("meta_description"),
+                        "body": result["body_html"],
+                        "sort": 100 + done * 10,
+                        "flag": bool(result.get("needs_human_review")),
+                    },
+                )
+            db.commit()
+            done += 1
+            if result.get("needs_human_review"):
+                flagged += 1
+            logging.info(
+                f"[GUIDE] ok: {slug} confidence={result['confidence']} "
+                f"flag={result.get('needs_human_review')} "
+                f"words={len(result['body_html'].split())}"
+            )
+        except Exception:
+            db.rollback()
+            logging.exception(f"[GUIDE] DB insert failed for {slug}")
+            failed += 1
+            continue
+        finally:
+            db.close()
 
     logging.info(f"[GUIDE] done={done} skipped={skipped} flagged={flagged} failed={failed}")
 
