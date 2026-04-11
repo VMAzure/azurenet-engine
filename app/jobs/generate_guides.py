@@ -262,10 +262,21 @@ def _slugify(s: str) -> str:
     return t[:120] or "guida"
 
 
+def _strip_nul(s: str | None) -> str | None:
+    """Postgres rifiuta byte NUL (\\x00) nelle colonne text. gpt-5 talvolta li
+    inserisce dentro caratteri accentati ('Propriet\\x00e0' invece di 'Proprietà').
+    Rimuove anche altri control char zero-width che possono mandare in errore COPY/INSERT."""
+    if s is None:
+        return None
+    return s.replace("\x00", "").replace("\u0000", "")
+
+
 def _sanitize_html(html: str) -> str:
     """Rimuove tag non whitelisted per sicurezza (anche se il prompt li vieta)."""
     if not html:
         return ""
+    # Strip NUL bytes prima di tutto (gpt-5 li produce occasionalmente)
+    html = _strip_nul(html) or ""
     # Rimuovi script, iframe, style, object, embed, form, input, button, meta, link
     html = re.sub(r"</?(?:script|iframe|style|object|embed|form|input|button|meta|link|div|span|a)[^>]*>", "", html, flags=re.IGNORECASE)
     # Rimuovi attributi class e style da tutti i tag (ma tieni i tag)
@@ -304,6 +315,9 @@ def generate_guide(client: OpenAI, guide_spec: dict) -> dict | None:
     if not data.get("h1"):
         data["h1"] = guide_spec["h1"]
 
+    # Strip NUL bytes ovunque (Postgres li rifiuta in colonne text)
+    data["h1"] = _strip_nul(data.get("h1")) or guide_spec["h1"]
+    data["meta_description"] = _strip_nul(data.get("meta_description"))
     data["body_html"] = _sanitize_html(data["body_html"])
     if data.get("confidence") not in ("high", "medium", "low"):
         data["confidence"] = "medium"

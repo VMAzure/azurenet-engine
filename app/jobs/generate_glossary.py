@@ -337,6 +337,14 @@ def _slugify(s: str) -> str:
     return t[:120] or "termine"
 
 
+def _strip_nul(s: str | None) -> str | None:
+    """Postgres rifiuta byte NUL (\\x00) nelle colonne text. gpt-5 talvolta li
+    inserisce dentro caratteri accentati. Ne fa lo stripping."""
+    if s is None:
+        return None
+    return s.replace("\x00", "").replace("\u0000", "")
+
+
 def generate_category_batch(client: OpenAI, category_label: str, terms: list[tuple[str, bool]]) -> list[dict] | None:
     terms_list = "\n".join(f"- {t[0]}" for t in terms)
     try:
@@ -427,11 +435,11 @@ def run(category_filter: str | None = None, force: bool = False, dry_run: bool =
         premium_map = {t[0]: t[1] for t in cat_terms}
 
         for idx, item in enumerate(items):
-            term = (item.get("term") or "").strip()
+            term = (_strip_nul(item.get("term")) or "").strip()
             if not term:
                 continue
-            definition = (item.get("definition") or "").strip()
-            example = (item.get("example") or "").strip() or None
+            definition = (_strip_nul(item.get("definition")) or "").strip()
+            example = (_strip_nul(item.get("example")) or "").strip() or None
             see_also_raw = item.get("see_also") or []
             is_premium = premium_map.get(term, False)
 
