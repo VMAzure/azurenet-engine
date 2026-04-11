@@ -31,6 +31,7 @@ import hashlib
 import json
 import logging
 import os
+import random
 import re
 import struct
 import subprocess
@@ -68,6 +69,67 @@ VOICE_LUCIA = "Laomedeia"     # femminile, upbeat, vivace
 PODCAST_BUCKET = "vehicle_podcasts"
 BATCH_SIZE = 3            # podcast processati per invocazione (ogni 60s)
 MAX_ATTEMPTS = 3          # dopo N tentativi: failed + refund crediti
+
+
+# ─────────────────────────────────────────────
+# Varianti di apertura episodio (scelta random per evitare pattern ripetitivo)
+# ─────────────────────────────────────────────
+
+INTRO_STYLES = [
+    {
+        "id": "discovery",
+        "label": "Scoperta sul campo",
+        "instruction": (
+            "Marco apre raccontando il veicolo come una SCOPERTA fatta oggi presso il "
+            "dealer, come chi torna da un sopralluogo. "
+            "Pattern di esempio: \"Oggi da {NomeDealer}, a {Città}, abbiamo trovato una "
+            "[modello] che ci ha fatto alzare gli occhi dallo schermo...\". "
+            "Lucia reagisce con curiosità genuina (\"Ah, raccontami!\", \"Davvero? Cos'ha "
+            "di speciale?\")."
+        ),
+    },
+    {
+        "id": "invitation",
+        "label": "Invito all'ascolto",
+        "instruction": (
+            "Marco apre invitando direttamente l'ascoltatore a fermarsi un secondo se sta "
+            "valutando una certa tipologia di auto, e poi introduce il dealer come il posto "
+            "dove quella specifica auto è visibile. "
+            "Pattern di esempio: \"Se stai pensando a una [categoria/segmento], fermati "
+            "un attimo. {NomeDealer}, a {Città}, ha in vetrina un pezzo di cui vale "
+            "davvero la pena parlare.\". "
+            "Lucia rilancia (\"Interessante, di cosa si tratta?\", \"Dai, non tenermi "
+            "sulle spine!\")."
+        ),
+    },
+    {
+        "id": "curiosity",
+        "label": "Curiosità diretta",
+        "instruction": (
+            "Marco apre con un fatto concreto sul veicolo (modello + colore + dettaglio "
+            "distintivo) buttato lì come se fosse un'osservazione a voce alta, e solo "
+            "dopo rivela il dealer. "
+            "Pattern di esempio: \"Una [modello] [anno] in [colore]. Rara da incrociare "
+            "così. Ce n'è una, ed è da {NomeDealer} a {Città}.\". "
+            "Lucia reagisce al dettaglio (\"[colore] su [modello]? Scelta da intenditori!\", "
+            "\"Non la vedo spesso, questa...\")."
+        ),
+    },
+    {
+        "id": "episode_framing",
+        "label": "Tappa dell'episodio",
+        "instruction": (
+            "Marco apre incorniciando l'episodio come una tappa della trasmissione, un "
+            "fermo di routine da un dealer specifico per mettere a fuoco un'auto. "
+            "Pattern di esempio: \"In questo episodio ci fermiamo da {NomeDealer}, a "
+            "{Città}, e mettiamo a fuoco una [modello] che merita un racconto.\" oppure "
+            "\"Oggi ci portiamo dentro {NomeDealer}, {Città}, perché c'è una [modello] "
+            "che ci gira in testa dalla mattina.\". "
+            "Lucia fa da spalla curiosa (\"Ok, mettimi al corrente!\", \"Cos'è che ti "
+            "ha preso?\")."
+        ),
+    },
+]
 
 
 # ─────────────────────────────────────────────
@@ -128,17 +190,22 @@ PAROLE BANDITE: "affare", "imperdibile", "scopri", "fantastic*", "perfett*",
 STRUTTURA OBBLIGATORIA
 ══════════════════════════════════════════════
 
-1) APERTURA DEALER-FIRST: "Oggi da [NomeDealer] abbiamo trovato una [modello]..."
-2) PRESENTAZIONE NATURALE: modello + colore + km in UNA frase
+1) APERTURA (stile variabile per evitare monotonia tra episodi): segui
+   RIGOROSAMENTE l'istruzione "STILE APERTURA" fornita nel prompt utente.
+   NON usare mai "Oggi da [Dealer] abbiamo trovato..." se lo stile richiesto
+   è diverso. Ogni stile ha un suo pattern e una sua reazione di Lucia.
+2) PRESENTAZIONE NATURALE: modello + colore + km in UNA frase (solo dopo
+   l'apertura scelta)
 3) RACCONTO DISTILLATO DAL text_long: 3-4 punti estratti in scambi vivaci
 4) DOMANDA REALE 1 (da text_faq): Lucia adatta, Marco risponde
 5) DOMANDA REALE 2 (da text_faq): stesso trattamento
 6) PER CHI È: battuta breve da persona_target
 7) CHIUSURA:
-   - Marco: "Se ti ha incuriosito, passa a vederla da [NomeDealer] a [Città],
-     oppure sul sito [dominio]. È un'ottima occasione."
-   - Lucia: "Noi ci fermiamo qui. Grazie di averci ascoltato, ci sentiamo al
-     prossimo episodio. Ciao ciao!"
+   - Marco: invito sobrio a vedere il veicolo ("Se ti ha incuriosito, passa
+     a vederla da [NomeDealer] a [Città], oppure sul sito [dominio].
+     È un'ottima occasione.")
+   - Lucia: saluto editoriale fisso ("Noi ci fermiamo qui. Grazie di averci
+     ascoltato, ci sentiamo al prossimo episodio. Ciao ciao!")
 
 ══════════════════════════════════════════════
 REGOLE DI ENERGIA E RITMO
@@ -172,7 +239,18 @@ OUTPUT STRICT JSON:
 """
 
 
-USER_PROMPT_HEADER = """Genera l'episodio radiofonico. L'apertura deve essere DEALER-FIRST ("Oggi da {nome_commerciale} abbiamo trovato..." o variante).
+USER_PROMPT_HEADER = """Genera l'episodio radiofonico. L'apertura deve seguire ESATTAMENTE lo stile richiesto qui sotto (cambia a ogni episodio per evitare monotonia).
+
+══════════════════════════════════════════
+STILE APERTURA DI QUESTO EPISODIO
+══════════════════════════════════════════
+Stile selezionato: **{intro_style_label}**
+
+{intro_style_instruction}
+
+NON usare stili alternativi. NON usare "Oggi da [Dealer] abbiamo trovato..."
+se lo stile selezionato sopra è diverso da "Scoperta sul campo". Rispetta il
+pattern indicato. Lucia reagisce coerentemente con lo stile scelto.
 
 ══════════════════════════════════════════
 DEALER
@@ -222,7 +300,7 @@ DOMANDE REALI (cuore dell'episodio)
 
 ══════════════════════════════════════════
 
-Scrivi ora l'episodio. Apertura "Oggi da {nome_commerciale}...". Chiusura Lucia: saluto al prossimo episodio. NIENTE prezzo, NIENTE dati tecnici, NIENTE brand history generica.
+Scrivi ora l'episodio. L'apertura deve RIGOROSAMENTE seguire lo stile "{intro_style_label}" indicato sopra. Chiusura Lucia: saluto al prossimo episodio. NIENTE prezzo, NIENTE dati tecnici, NIENTE brand history generica.
 """
 
 
@@ -444,7 +522,15 @@ def _compute_content_hash(ctx: dict) -> str:
 
 def _generate_script(client: OpenAI, ctx: dict) -> dict:
     ai_blocks = _build_ai_blocks(ctx["_ai"])
+
+    # Seleziona una variante di apertura in modo uniforme random.
+    # Evita che tutti gli episodi inizino con "Oggi da...".
+    intro_style = random.choice(INTRO_STYLES)
+    logger.info("[PODCAST] intro_style=%s", intro_style["id"])
+
     user_prompt = USER_PROMPT_HEADER.format(
+        intro_style_label=intro_style["label"],
+        intro_style_instruction=intro_style["instruction"],
         auto_category=ai_blocks["auto_category"],
         semantic_topics=ai_blocks["semantic_topics"],
         tagline=ai_blocks["tagline"],
