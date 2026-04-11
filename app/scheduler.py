@@ -1,4 +1,5 @@
 ﻿from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from app.jobs.vic import (
     sync_vic_marche,
     sync_vic_modelli,
@@ -27,6 +28,7 @@ from app.jobs.vehicle_stock_csv_import import vehicle_stock_csv_import_job
 from app.jobs.sync_google_reviews import google_reviews_sync_job
 from app.jobs.sync_news import sync_news_job
 from app.jobs.rewrite_news import rewrite_news_job
+from app.jobs.vehicle_podcast_worker import vehicle_podcast_worker
 
 from app.jobs.sync_motornet_immagini_fill import run as sync_nuovo_immagini_fill
 from app.jobs.queue_modelli_missing import run as queue_modelli_missing
@@ -333,6 +335,20 @@ def build_scheduler():
         coalesce=True,
     )
     logging.info("[SCHEDULER] NEWS REWRITE job registered")
+
+    # PODCAST VEICOLO (coda async): poll ogni 60s, processa BATCH_SIZE righe.
+    # core_api_v2 accoda status='pending' al click del dealer, questo worker
+    # pesca e genera (gpt-5 + Gemini TTS + upload Supabase).
+    scheduler.add_job(
+        func=vehicle_podcast_worker,
+        trigger=IntervalTrigger(seconds=60),
+        id="vehicle_podcast_worker",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=30,
+    )
+    logging.info("[SCHEDULER] VEHICLE PODCAST WORKER job registered (every 60s)")
 
     return scheduler
 
