@@ -217,6 +217,18 @@ def schedule_vcom_jobs(scheduler):
     
 
 from app.jobs.autoscout_sync import autoscout_sync_job
+from app.jobs.asm_sync import asm_sync_job
+
+def schedule_asm_jobs(scheduler):
+    scheduler.add_job(
+        func=asm_sync_job,
+        trigger=CronTrigger(minute="*/2"),  # ogni 2 minuti
+        id="asm_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    logging.info("[SCHEDULER] ASM SYNC job registered")
 
 def schedule_autoscout_jobs(scheduler):
     # --------------------------------------------------
@@ -303,9 +315,13 @@ def build_scheduler():
     schedule_usato_jobs(scheduler)
     logging.info("[SCHEDULER] USATO jobs registered")
 
-    # Pubblica AS24    
+    # Pubblica AS24
     schedule_autoscout_jobs(scheduler)
     logging.info("[SCHEDULER] AUTOSCOUT jobs registered")
+
+    # Pubblica ASM (AutoSuperMarket)
+    schedule_asm_jobs(scheduler)
+    logging.info("[SCHEDULER] ASM jobs registered")
 
     # registra WLTP (normativa euro)
     schedule_wltp_jobs(scheduler)
