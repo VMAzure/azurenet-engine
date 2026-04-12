@@ -29,6 +29,7 @@ from app.jobs.sync_google_reviews import google_reviews_sync_job
 from app.jobs.sync_news import sync_news_job
 from app.jobs.rewrite_news import rewrite_news_job
 from app.jobs.vehicle_podcast_worker import vehicle_podcast_worker
+from app.jobs.dealer_podcast_worker import dealer_podcast_worker
 
 from app.jobs.sync_motornet_immagini_fill import run as sync_nuovo_immagini_fill
 from app.jobs.queue_modelli_missing import run as queue_modelli_missing
@@ -349,6 +350,18 @@ def build_scheduler():
         misfire_grace_time=30,
     )
     logging.info("[SCHEDULER] VEHICLE PODCAST WORKER job registered (every 60s)")
+
+    # DEALER PODCAST (coda async): poll ogni 60s, 1 dealer per run.
+    scheduler.add_job(
+        func=dealer_podcast_worker,
+        trigger=IntervalTrigger(seconds=60),
+        id="dealer_podcast_worker",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=30,
+    )
+    logging.info("[SCHEDULER] DEALER PODCAST WORKER job registered (every 60s)")
 
     return scheduler
 
