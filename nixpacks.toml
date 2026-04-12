@@ -1,0 +1,6 @@
+# Nixpacks config per Railway — aggiunge ffmpeg come pacchetto di sistema.
+# Serve a vehicle_podcast_worker.py per convertire PCM → MP3 128k.
+# Senza ffmpeg il worker fa fallback a WAV che Safari/iOS non supporta.
+
+[phases.setup]
+aptPkgs = ["ffmpeg"]
