@@ -481,7 +481,7 @@ def _fetch_vehicle_context(db, id_auto: str) -> dict:
     veh_row = db.execute(
         text("""
             SELECT dp.id AS dealer_public_id, dp.owner_user_id,
-                   dp.nome_commerciale, dp.citta, dp.provincia
+                   dp.nome_commerciale, dp.brand_name, dp.citta, dp.provincia
             FROM v_apimax_detail v
             JOIN dealer_public dp ON dp.owner_user_id = v.dealer_id
             WHERE v.id_auto = :vid
@@ -587,11 +587,14 @@ def _generate_script(client: OpenAI, ctx: dict) -> dict:
     intro_style = random.choice(INTRO_STYLES)
     logger.info("[PODCAST] intro_style=%s", intro_style["id"])
 
-    # Pulisci il nome commerciale per uso radiofonico (rimuovi S.R.L., S.N.C., ecc.)
-    raw_name = ctx.get("nome_commerciale") or "il dealer"
-    brand_name = _clean_brand_name(raw_name)
-    if brand_name != raw_name:
-        logger.info("[PODCAST] brand name cleaned: %r → %r", raw_name, brand_name)
+    # Usa brand_name (editato dal dealer) se disponibile, fallback a cleaner automatico
+    brand_name = (ctx.get("brand_name") or "").strip()
+    if not brand_name:
+        raw_name = ctx.get("nome_commerciale") or "il dealer"
+        brand_name = _clean_brand_name(raw_name)
+        logger.info("[PODCAST] brand_name NULL, auto-cleaned: %r -> %r", raw_name, brand_name)
+    else:
+        logger.info("[PODCAST] using dealer brand_name: %r", brand_name)
 
     user_prompt = USER_PROMPT_HEADER.format(
         intro_style_label=intro_style["label"],
