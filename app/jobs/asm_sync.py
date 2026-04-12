@@ -9,7 +9,7 @@ from datetime import datetime
 
 from sqlalchemy import text
 
-from database import SessionLocal
+from app.database import SessionLocal
 from app.external.autosupermarket import (
     create_listing,
     update_listing,
