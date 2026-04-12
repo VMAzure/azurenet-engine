@@ -309,6 +309,66 @@ Scrivi ora l'episodio. L'apertura deve RIGOROSAMENTE seguire lo stile "{intro_st
 # ─────────────────────────────────────────────
 
 
+def _clean_brand_name(raw: str) -> str:
+    """
+    Pulisce il nome commerciale per uso podcast radiofonico.
+    Rimuove forme giuridiche italiane e componenti legali che suonano
+    male in un dialogo parlato.
+
+    Esempi:
+      "Scuderia 76 S.R.L."                                  → "Scuderia 76"
+      "Opportunity Car di Daniele Randazzo & C. S.N.C."      → "Opportunity Car"
+      "MATARESE AUTOMOBILI"                                  → "Matarese Automobili"
+      "Gamma Auto S.r.l."                                    → "Gamma Auto"
+      "Auto Milano Sud S.A.S. di Mario Rossi"                → "Auto Milano Sud"
+      "SCUDERIA 76 SRL"                                      → "Scuderia 76"
+    """
+    if not raw:
+        return raw
+    s = raw.strip()
+
+    # 1. Rimuovi forme giuridiche (case-insensitive, con/senza punti)
+    legal_forms = [
+        r"\bS\.?R\.?L\.?\b\.?",
+        r"\bS\.?N\.?C\.?\b\.?",
+        r"\bS\.?A\.?S\.?\b\.?",
+        r"\bS\.?P\.?A\.?\b\.?",
+        r"\bS\.?S\.?\b\.?",
+        r"\bS\.?R\.?L\.?S\.?\b\.?",   # SRLS
+        r"\bS\.?A\.?P\.?A\.?\b\.?",   # SAPA
+    ]
+    for form in legal_forms:
+        s = re.sub(r"\s*[-–—]?\s*" + form, "", s, flags=re.IGNORECASE).strip()
+
+    # 2. Rimuovi "& C." / "&C." / "& C" in coda
+    s = re.sub(r"\s*&\s*C\.?\s*$", "", s, flags=re.IGNORECASE).strip()
+
+    # 3. Rimuovi "di [Nome Cognome ...]" in coda (tipico delle SNC/SAS)
+    s = re.sub(r"\s+di\s+[A-Z][a-zà-ú]+(?:\s+[A-Z][a-zà-ú]+)*\s*$", "", s).strip()
+    # Versione uppercase: "DI DANIELE RANDAZZO"
+    s = re.sub(r"\s+(?:DI|Di)\s+[A-ZÀ-Ú][A-ZÀ-Úa-zà-ú]+(?:\s+[A-ZÀ-Ú&][A-ZÀ-Úa-zà-ú.]*)*\s*$", "", s).strip()
+
+    # 4. Pulizia finale: trattini/punti trailing, spazi multipli
+    s = re.sub(r"[\s\-–—.]+$", "", s).strip()
+    s = re.sub(r"\s{2,}", " ", s)
+
+    # 5. Title case se tutto uppercase (più leggibile nel podcast)
+    if s == s.upper() and len(s) > 3:
+        # Preserva sigle note (numeri, 2-3 lettere)
+        words = s.split()
+        titled = []
+        for w in words:
+            if len(w) <= 3 and w.isalpha():
+                titled.append(w)  # lascia sigle come sono
+            elif w.isdigit():
+                titled.append(w)
+            else:
+                titled.append(w.capitalize())
+        s = " ".join(titled)
+
+    return s or raw  # fallback al nome originale se la pulizia lo svuota
+
+
 def _parse_jsonb(v: Any) -> Any:
     if v is None:
         return None
@@ -524,9 +584,14 @@ def _generate_script(client: OpenAI, ctx: dict) -> dict:
     ai_blocks = _build_ai_blocks(ctx["_ai"])
 
     # Seleziona una variante di apertura in modo uniforme random.
-    # Evita che tutti gli episodi inizino con "Oggi da...".
     intro_style = random.choice(INTRO_STYLES)
     logger.info("[PODCAST] intro_style=%s", intro_style["id"])
+
+    # Pulisci il nome commerciale per uso radiofonico (rimuovi S.R.L., S.N.C., ecc.)
+    raw_name = ctx.get("nome_commerciale") or "il dealer"
+    brand_name = _clean_brand_name(raw_name)
+    if brand_name != raw_name:
+        logger.info("[PODCAST] brand name cleaned: %r → %r", raw_name, brand_name)
 
     user_prompt = USER_PROMPT_HEADER.format(
         intro_style_label=intro_style["label"],
@@ -541,7 +606,7 @@ def _generate_script(client: OpenAI, ctx: dict) -> dict:
         marketing_hooks_block=ai_blocks["marketing_hooks_block"],
         persona_target=ai_blocks["persona_target"],
         car_faq_block=ai_blocks["car_faq_block"],
-        nome_commerciale=ctx.get("nome_commerciale") or "il dealer",
+        nome_commerciale=brand_name,
         citta=ctx.get("citta") or "",
         primary_domain=ctx.get("_primary_domain") or "(sito non configurato)",
     )
