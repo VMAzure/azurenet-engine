@@ -80,7 +80,8 @@ def build_minimal_payload(
     Payload CREATE V1 AutoScout24 (professionale, produzione-safe).
     - availabilityType=1 (Immediata) hardcoded
     - bodyType risolto a monte (DB-driven, production-safe)
-    - bodyColorName sempre passato dal DB
+    - bodyColorName dal campo testo ``colore`` solo se manca ``as24_body_color_id``
+      (con ID catalogo AS24 si invia solo ``bodyColor`` e si evita conflitto col nome)
     - IVA gestita correttamente via PublicPrice
     - fuel (primaryFuelType + fuelCategory) risolti a monte
     - transmission risolto a monte (AS24 enum)
@@ -145,9 +146,12 @@ def build_minimal_payload(
     # -----------------------------
     # Payload finale
     # -----------------------------
+    # Km-zero: previous_owner_count == 0 → offerType "D" (Demonstration)
+    offer_type = "D" if as24_previous_owner_count == 0 else "U"
+
     payload = {
         "vehicleType": vehicle_type,
-        "offerType": "U",
+        "offerType": offer_type,
 
         # ID AS24
         "make": as24_make_id,
@@ -327,17 +331,29 @@ def build_minimal_payload(
     # Colori / Interni / Vernice (AS24 - DB driven)
     # -------------------------------------------------
     if autoscout_attrs:
-        if autoscout_attrs.get("as24_body_color_id") is not None:
-            payload["bodyColor"] = autoscout_attrs["as24_body_color_id"]
+        bc = autoscout_attrs.get("as24_body_color_id")
+        if bc is not None:
+            try:
+                payload["bodyColor"] = int(bc)
+            except (TypeError, ValueError):
+                pass
+            else:
+                # Con bodyColor catalogo, bodyColorName testuale può far preferire/ignorare
+                # il campo strutturato lato AS24 → rimuoviamo il nome.
+                payload.pop("bodyColorName", None)
 
-        if autoscout_attrs.get("as24_upholstery_color_id") is not None:
-            payload["upholsteryColor"] = autoscout_attrs["as24_upholstery_color_id"]
+        uc = autoscout_attrs.get("as24_upholstery_color_id")
+        if uc is not None:
+            try:
+                payload["upholsteryColor"] = int(uc)
+            except (TypeError, ValueError):
+                pass
 
         if autoscout_attrs.get("as24_upholstery_type_code"):
             payload["upholsteryType"] = autoscout_attrs["as24_upholstery_type_code"]
 
         if autoscout_attrs.get("is_metallic") is not None:
-            payload["isMetallic"] = autoscout_attrs["is_metallic"]
+            payload["isMetallic"] = bool(autoscout_attrs["is_metallic"])
 
     # -------------------------------------------------
     # Emissioni CO2 (AS24)
