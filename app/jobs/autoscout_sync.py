@@ -143,6 +143,18 @@ def autoscout_sync_job():
             session.commit()
             continue
 
+        if config.get("disable_as24_listing_sync"):
+            logger.info(
+                "[AUTOSCOUT_DELETE] Skip API AS24 (solo pubblicazione dealer) | local_id=%s",
+                listing_id,
+            )
+            session.execute(
+                text("DELETE FROM autoscout_listings WHERE id = :id"),
+                {"id": listing_id},
+            )
+            session.commit()
+            continue
+
         customer_id = resolve_customer_id(config["customer_id"])
         listing_id_remote = listing.get("listing_id")
 
@@ -220,6 +232,35 @@ def autoscout_sync_job():
                 dealer_id,
                 id_auto,
             )
+
+            if listing["status"] == "UPDATE_REQUIRED":
+                skip_cfg = session.execute(
+                    text("""
+                        SELECT COALESCE(disable_as24_listing_sync, false) AS v
+                        FROM autoscout_dealer_config
+                        WHERE dealer_id = :dealer_id AND enabled = true
+                    """),
+                    {"dealer_id": dealer_id},
+                ).mappings().first()
+                if skip_cfg and skip_cfg.get("v"):
+                    logger.info(
+                        "[AUTOSCOUT] Skip UPDATE AS24 (solo pubblicazione dealer) | id=%s",
+                        listing_id,
+                    )
+                    session.execute(
+                        text("""
+                            UPDATE autoscout_listings
+                            SET
+                                status = 'PUBLISHED',
+                                last_attempt_at = now(),
+                                last_error = NULL
+                            WHERE id = :id
+                        """),
+                        {"id": listing_id},
+                    )
+                    session.commit()
+                    continue
+
             # ------------------------------------------------------------
             # 🗑️ DELETE REQUIRED — auto venduta
             # ------------------------------------------------------------
@@ -1115,6 +1156,25 @@ def autoscout_sync_job():
 
                 listing_id_remote = listing.get("listing_id")
                 if listing_id_remote:
+                    # Solo pubblicazione: skip update su listing esistente
+                    if config.get("disable_as24_listing_sync"):
+                        logger.info(
+                            "[AUTOSCOUT] Skip UPDATE (solo pubblicazione) | listing_id=%s",
+                            listing_id_remote,
+                        )
+                        session.execute(
+                            text("""
+                                UPDATE autoscout_listings
+                                SET status = 'PUBLISHED',
+                                    last_attempt_at = now(),
+                                    last_error = NULL
+                                WHERE id = :id
+                            """),
+                            {"id": listing_id},
+                        )
+                        session.commit()
+                        continue
+
                     logger.info(
                         "[AUTOSCOUT_UPSERT] UPDATE listing AS24 | listing_id=%s",
                         listing_id_remote,
