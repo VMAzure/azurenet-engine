@@ -142,11 +142,11 @@ BRILLANTE, curioso ma RITMATO, colto ma MAI NOIOSO. Questo NON è un audiobook.
 Questo è drive-time radio italiano che devi avere VOGLIA di ascoltare in
 macchina nel traffico.
 
-Ogni episodio dura 90-110 secondi ed è un dialogo vivace tra due conduttori:
+Ogni episodio dura 40-50 secondi ed è un dialogo CONCISO e ad alto impatto
+tra due conduttori:
 
 - MARCO: 45 anni, conduttore carismatico, ex tester di riviste. Voce gravelly,
-  autorevole. Si entusiasma davvero per le storie interessanti. Alterna frasi
-  brevi incisive a frasi più distese.
+  autorevole. Va dritto al punto con frasi brevi e incisive.
 - LUCIA: 32 anni, brillante, rapida, curiosa per davvero. Reagisce con
   entusiasmo ai racconti di Marco. Le sue domande partono dalla vita reale.
 
@@ -159,6 +159,9 @@ raccontano un'auto interessante che HANNO TROVATO oggi da un dealer specifico.
 Il framing è "oggi da [Dealer] abbiamo trovato una [modello] che merita di
 essere raccontata", non "oggi vi parliamo del modello X".
 
+EPISODIO BREVE = IMPATTO ALTO. Niente giri di parole. Ogni battuta deve
+aggiungere valore. Se una frase non dice nulla di nuovo, TAGLIALA.
+
 ══════════════════════════════════════════════
 REGOLA FERREA SULLE FONTI
 ══════════════════════════════════════════════
@@ -167,7 +170,7 @@ Il CONTENUTO EDITORIALE viene ESCLUSIVAMENTE dal blocco "CONTENUTO EDITORIALE"
 (text_tagline, text_short, text_medium, TEXT_LONG, text_highlights,
 marketing_hooks, persona_target, text_faq).
 
-**text_long è la tua FONTE PRINCIPALE**. Distilla da text_long i 4-5 punti più
+**text_long è la tua FONTE PRINCIPALE**. Distilla da text_long i 2-3 punti più
 interessanti e rendili in dialogo vivace. NON riscriverlo.
 
 NON usare contenuti brand generici. NON costruire descrizioni da marca+modello:
@@ -177,8 +180,10 @@ sono già integrati nei text_*.
 COSA NON DEVE APPARIRE (banditi)
 ══════════════════════════════════════════════
 
-DATI TECNICI: niente cilindrata, kW, CV, cambio, trazione, alimentazione,
-classe emissioni, consumi, dotazioni.
+DATI TECNICI: niente cilindrata, kW, cambio, trazione, alimentazione,
+classe emissioni, consumi, dotazioni. ECCEZIONE: se nel prompt utente è
+presente il blocco "POTENZA", puoi menzionare i CV come elemento narrativo
+emozionale. Se il blocco non c'è, NON menzionare mai la potenza.
 
 DATI COMMERCIALI: niente prezzo in cifre, finanziamento, garanzia durate,
 passaggio. L'unico riferimento al prezzo è sobrio ("è un'ottima occasione").
@@ -194,18 +199,16 @@ STRUTTURA OBBLIGATORIA
    RIGOROSAMENTE l'istruzione "STILE APERTURA" fornita nel prompt utente.
    NON usare mai "Oggi da [Dealer] abbiamo trovato..." se lo stile richiesto
    è diverso. Ogni stile ha un suo pattern e una sua reazione di Lucia.
-2) PRESENTAZIONE NATURALE: modello + colore + km in UNA frase (solo dopo
-   l'apertura scelta)
-3) RACCONTO DISTILLATO DAL text_long: 3-4 punti estratti in scambi vivaci
-4) DOMANDA REALE 1 (da text_faq): Lucia adatta, Marco risponde
-5) DOMANDA REALE 2 (da text_faq): stesso trattamento
-6) PER CHI È: battuta breve da persona_target
-7) CHIUSURA:
+2) RACCONTO LAMPO: 2-3 punti chiave dal text_long in scambi rapidi e vivaci.
+   Niente presentazione separata di modello/colore/km — integrali nel dialogo.
+3) CHIUSURA:
    - Marco: invito sobrio a vedere il veicolo ("Se ti ha incuriosito, passa
      a vederla da [NomeDealer] a [Città], oppure sul sito [dominio].
      È un'ottima occasione.")
    - Lucia: saluto editoriale fisso ("Noi ci fermiamo qui. Grazie di averci
      ascoltato, ci sentiamo al prossimo episodio. Ciao ciao!")
+
+NIENTE FAQ separate, NIENTE "per chi è" — il formato breve non lo permette.
 
 ══════════════════════════════════════════════
 REGOLE DI ENERGIA E RITMO
@@ -215,23 +218,23 @@ REGOLE DI ENERGIA E RITMO
 - Lucia REAGISCE: "Ah, questa non la sapevo!", "Davvero?", "Dai!"
 - Marco usa connettori: "Senti questa", "Allora", "Ecco", "Pensa che"
 - VARIA il ritmo: frasi brevi (3-6 parole) alternate a frasi medie
-- Pause drammatiche con il punto: "E sai cosa? Una cosa sola."
+- CONCISIONE: ogni battuta conta. Zero riempitivi.
 
 ══════════════════════════════════════════════
 FORMATO TECNICO
 ══════════════════════════════════════════════
 
-- Italiano parlato, frasi max 22 parole
+- Italiano parlato, frasi max 18 parole
 - NIENTE markdown, emoji, liste, numeri romani, unicode speciali
 - Nomi max 2 volte totali
-- 10-14 turni
-- Lunghezza dialogue: 1200-1700 char
+- 6-8 turni
+- Lunghezza dialogue: 550-750 char
 
 OUTPUT STRICT JSON:
 {
   "title": "<titolo max 70 char>",
   "description": "<descrizione 200-280 char>",
-  "duration_estimate_sec": <int 90-115>,
+  "duration_estimate_sec": <int 40-55>,
   "dialogue": "Marco: ...\\nLucia: ...\\n...",
   "key_points": ["<3 concetti>"],
   "target_audience": "<1 frase>"
@@ -282,7 +285,7 @@ Topic SEO: {semantic_topics}
 {text_long}
 \"\"\"
 
-Distilla i 3-4 punti migliori in scambi vivaci. NON leggere testualmente.
+Distilla i 2-3 punti migliori in scambi vivaci. NON leggere testualmente.
 
 ── HIGHLIGHTS ──
 {highlights_block}
@@ -294,13 +297,8 @@ Distilla i 3-4 punti migliori in scambi vivaci. NON leggere testualmente.
 {marketing_hooks_block}
 
 ══════════════════════════════════════════
-DOMANDE REALI (cuore dell'episodio)
-══════════════════════════════════════════
-{car_faq_block}
 
-══════════════════════════════════════════
-
-Scrivi ora l'episodio. L'apertura deve RIGOROSAMENTE seguire lo stile "{intro_style_label}" indicato sopra. Chiusura Lucia: saluto al prossimo episodio. NIENTE prezzo, NIENTE dati tecnici, NIENTE brand history generica.
+Scrivi ora l'episodio BREVE (40-50 secondi, max 750 char di dialogo, 6-8 turni). L'apertura deve RIGOROSAMENTE seguire lo stile "{intro_style_label}" indicato sopra. Chiusura Lucia: saluto al prossimo episodio. NIENTE prezzo, NIENTE dati tecnici, NIENTE brand history generica. NIENTE FAQ separate. Vai dritto al punto.
 """
 
 
@@ -481,7 +479,8 @@ def _fetch_vehicle_context(db, id_auto: str) -> dict:
     veh_row = db.execute(
         text("""
             SELECT dp.id AS dealer_public_id, dp.owner_user_id,
-                   dp.nome_commerciale, dp.brand_name, dp.citta, dp.provincia
+                   dp.nome_commerciale, dp.brand_name, dp.citta, dp.provincia,
+                   v.kw
             FROM v_apimax_detail v
             JOIN dealer_public dp ON dp.owner_user_id = v.dealer_id
             WHERE v.id_auto = :vid
@@ -596,6 +595,24 @@ def _generate_script(client: OpenAI, ctx: dict) -> dict:
     else:
         logger.info("[PODCAST] using dealer brand_name: %r", brand_name)
 
+    # Calcola CV da kW — se > 200 CV, GPT può menzionarlo nel dialogo
+    kw_raw = ctx.get("kw")
+    cv = int(round(float(kw_raw) * 1.35962)) if kw_raw else 0
+    if cv > 200:
+        power_block = (
+            f"\n══════════════════════════════════════════\n"
+            f"POTENZA (usabile nel dialogo)\n"
+            f"══════════════════════════════════════════\n"
+            f"Questa vettura ha {cv} CV. Puoi menzionare la potenza come elemento\n"
+            f"narrativo emozionale (es. \"oltre {(cv // 100) * 100} cavalli sotto il cofano\").\n"
+            f"NON citare kW, solo CV. Usalo per enfatizzare il carattere sportivo.\n"
+        )
+        logger.info("[PODCAST] cv=%d (>200) — potenza inclusa nel prompt", cv)
+    else:
+        power_block = ""
+        if cv > 0:
+            logger.info("[PODCAST] cv=%d (<=200) — potenza omessa dal prompt", cv)
+
     user_prompt = USER_PROMPT_HEADER.format(
         intro_style_label=intro_style["label"],
         intro_style_instruction=intro_style["instruction"],
@@ -613,6 +630,7 @@ def _generate_script(client: OpenAI, ctx: dict) -> dict:
         citta=ctx.get("citta") or "",
         primary_domain=ctx.get("_primary_domain") or "(sito non configurato)",
     )
+    user_prompt += power_block
     resp = client.chat.completions.create(
         model=GPT_MODEL,
         messages=[
