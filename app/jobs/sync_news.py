@@ -1,6 +1,8 @@
 import logging
 import os
+import re
 import sys
+import unicodedata
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -29,6 +31,30 @@ BODY_STRIP_PREFIXES = {
     # Boilerplate newsletter che precede l'articolo reale
     "autoappassionati.it": "scritte da chi le auto le guida per davvero. ",
 }
+
+
+def _slugify(txt: str) -> str:
+    """Slug SEO italiano: lower + rimozione accenti + solo [a-z0-9-], max 80."""
+    if not txt:
+        return "articolo"
+    normalized = unicodedata.normalize("NFKD", txt).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower())
+    slug = re.sub(r"-+", "-", slug).strip("-")[:80].strip("-")
+    return slug or "articolo"
+
+
+def generate_unique_slug(db, title: str) -> str:
+    """Genera slug univoco per news_articles: aggiunge suffisso -2, -3... se collisione."""
+    base = _slugify(title)
+    candidate = base
+    n = 1
+    while db.execute(
+        text("SELECT 1 FROM news_articles WHERE slug = :s LIMIT 1"),
+        {"s": candidate},
+    ).fetchone():
+        n += 1
+        candidate = f"{base}-{n}"
+    return candidate
 
 
 def clean_body(body: str | None, source_domain: str) -> str | None:
@@ -137,18 +163,21 @@ def sync_news_job():
                 skipped += 1
                 continue
 
-            # Inserisci articolo
+            # Inserisci articolo (slug stabile generato dal titolo)
+            title_value = a.get("title", "")
+            slug = generate_unique_slug(db, title_value)
             result = db.execute(
                 text("""
                     INSERT INTO news_articles
-                        (apitube_id, title, href, image_url, published_at, source_domain, body)
+                        (apitube_id, title, slug, href, image_url, published_at, source_domain, body)
                     VALUES
-                        (:apitube_id, :title, :href, :image_url, :published_at, :source_domain, :body)
+                        (:apitube_id, :title, :slug, :href, :image_url, :published_at, :source_domain, :body)
                     RETURNING id
                 """),
                 {
                     "apitube_id": apitube_id,
-                    "title": a.get("title", ""),
+                    "title": title_value,
+                    "slug": slug,
                     "href": a.get("href", ""),
                     "image_url": image,
                     "published_at": a.get("published_at"),
