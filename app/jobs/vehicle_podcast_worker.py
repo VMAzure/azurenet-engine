@@ -229,6 +229,9 @@ FORMATO TECNICO
 - Nomi max 2 volte totali
 - 6-8 turni
 - Lunghezza dialogue: 550-750 char
+- TTS — abbreviazioni SEMPRE per esteso (verrebbero lette lettera per lettera):
+  "CV" → "cavalli", "kW" / "KW" → "chilowatt", "km/h" → "chilometri orari",
+  "km" → "chilometri", "cc" → "centimetri cubi". Mai sigle nel dialogue.
 
 OUTPUT STRICT JSON:
 {
@@ -603,9 +606,13 @@ def _generate_script(client: OpenAI, ctx: dict) -> dict:
             f"\n══════════════════════════════════════════\n"
             f"POTENZA (usabile nel dialogo)\n"
             f"══════════════════════════════════════════\n"
-            f"Questa vettura ha {cv} CV. Puoi menzionare la potenza come elemento\n"
-            f"narrativo emozionale (es. \"oltre {(cv // 100) * 100} cavalli sotto il cofano\").\n"
-            f"NON citare kW, solo CV. Usalo per enfatizzare il carattere sportivo.\n"
+            f"Questa vettura ha {cv} cavalli. Puoi menzionare la potenza come\n"
+            f"elemento narrativo emozionale (es. \"oltre {(cv // 100) * 100} cavalli\n"
+            f"sotto il cofano\").\n"
+            f"REGOLA TTS OBBLIGATORIA: scrivi SEMPRE \"cavalli\" per esteso, MAI\n"
+            f"l'abbreviazione \"CV\" (verrebbe letta \"ci-vu\"). Allo stesso modo,\n"
+            f"se mai dovessi citare i kW (cosa che NON devi fare), useresti\n"
+            f"\"chilowatt\" per esteso, MAI \"kW\" o \"KW\".\n"
         )
         logger.info("[PODCAST] cv=%d (>200) — potenza inclusa nel prompt", cv)
     else:
