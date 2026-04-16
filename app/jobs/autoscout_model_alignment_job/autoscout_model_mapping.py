@@ -9,7 +9,7 @@ from app.database import SessionLocal
 # ============================================================
 
 # Marche che NON devono mai passare dal matcher generico
-# perché hanno (o avranno) un resolver dedicato
+# perché hanno un resolver dedicato perchè fanno come cazzo vogliono i nomi dei modelli!
 DEDICATED_RESOLVERS = {
     "mercedes": "mercedes",
     "mercedes-benz": "mercedes",

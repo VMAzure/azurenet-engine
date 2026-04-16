@@ -1,17 +1,25 @@
-import logging
 import hashlib
+import logging
 import os
-import requests
+import sys
 from datetime import datetime
+from pathlib import Path
 
+# Eseguito come `python app/jobs/sync_google_reviews.py` dalla cartella azurenet-engine:
+# Python non mette la root del progetto in sys.path → aggiungiamola prima degli import `app.*`
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+import requests
+from dotenv import load_dotenv
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import DealerPublic, DealerReview
-from dotenv import load_dotenv
-from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = _PROJECT_ROOT
 load_dotenv(BASE_DIR / ".env")
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -20,22 +28,45 @@ GOOGLE_PLACE_URL = "https://places.googleapis.com/v1/places/{}"
 logging.basicConfig(level=logging.INFO)
 
 
+def eligible_dealer_ids_for_review_sync(db: Session) -> list[int]:
+    """
+    Dealer con Place ID Google e considerati "da sincronizzare":
+    - `dealer_public.is_active`, oppure
+    - almeno una riga in `dealer_site_public` con `is_active` (sito pubblico acceso).
+
+    Prima il job usava solo `dealer_public.is_active`: i dealer con solo sito attivo
+    venivano esclusi pur avendo slug live.
+    """
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT dp.id
+            FROM public.dealer_public dp
+            WHERE NULLIF(TRIM(dp.google_place_id), '') IS NOT NULL
+              AND (
+                    COALESCE(dp.is_active, FALSE) IS TRUE
+                 OR EXISTS (
+                        SELECT 1
+                        FROM public.dealer_site_public s
+                        WHERE s.dealer_id = dp.id
+                          AND COALESCE(s.is_active, FALSE) IS TRUE
+                    )
+              )
+            ORDER BY dp.id
+            """
+        )
+    ).fetchall()
+    return [int(r[0]) for r in rows]
+
+
 def google_reviews_sync_job():
     logging.info("[REVIEWS] Global sync start")
 
     db: Session = SessionLocal()
 
     try:
-        dealer_ids = [
-            d.id
-            for d in db.query(DealerPublic.id)
-            .filter(
-                DealerPublic.is_active == True,
-                DealerPublic.google_place_id.isnot(None),
-                DealerPublic.google_place_id != "",
-            )
-            .all()
-        ]
+        dealer_ids = eligible_dealer_ids_for_review_sync(db)
+        logging.info(f"[REVIEWS] Eligible dealers (place id + active dealer or active site): {len(dealer_ids)}")
 
     finally:
         db.close()
@@ -119,16 +150,18 @@ def sync_dealer_reviews(dealer_id: int):
 
         url = GOOGLE_PLACE_URL.format(place_id)
 
-        params = {
-            "languageCode": "it",
-            "fields": "rating,userRatingCount,reviews"
+        # Places API (New): field mask obbligatorio (come GEO sopra). Query param `fields` non è supportato.
+        headers_reviews = {
+            "X-Goog-Api-Key": GOOGLE_API_KEY,
+            "X-Goog-FieldMask": "rating,userRatingCount,reviews",
         }
 
-        headers = {
-            "X-Goog-Api-Key": GOOGLE_API_KEY
-        }
-
-        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response = requests.get(
+            url,
+            params={"languageCode": "it"},
+            headers=headers_reviews,
+            timeout=10,
+        )
 
         if response.status_code != 200:
             logging.warning(f"[REVIEWS] Google error {response.status_code}")
@@ -219,7 +252,16 @@ def main():
 
     parser = argparse.ArgumentParser(description="Sync Google Reviews")
     parser.add_argument("--dealer-id", type=int, help="Dealer ID specifico")
-    parser.add_argument("--all", action="store_true", help="Sync tutti i dealer")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Sync tutti i dealer eleggibili (place id + dealer attivo o sito attivo su dealer_site_public)",
+    )
+    parser.add_argument(
+        "--all-with-place-id",
+        action="store_true",
+        help="Sync tutti i dealer con google_place_id (ignora flag attivo; utile per backfill one-shot)",
+    )
 
     args = parser.parse_args()
 
@@ -230,20 +272,27 @@ def main():
             sync_dealer_reviews(args.dealer_id)
 
         elif args.all:
+            ids = eligible_dealer_ids_for_review_sync(db)
+            logging.info(f"[REVIEWS] CLI --all: {len(ids)} dealer id(s)")
+            for did in ids:
+                sync_dealer_reviews(did)
+
+        elif args.all_with_place_id:
             dealers = (
                 db.query(DealerPublic)
                 .filter(
                     DealerPublic.google_place_id.isnot(None),
                     DealerPublic.google_place_id != "",
                 )
+                .order_by(DealerPublic.id)
                 .all()
             )
-
+            logging.info(f"[REVIEWS] CLI --all-with-place-id: {len(dealers)} dealer(s)")
             for dealer in dealers:
                 sync_dealer_reviews(dealer.id)
 
         else:
-            print("Usa --dealer-id oppure --all")
+            print("Usa --dealer-id, --all oppure --all-with-place-id")
 
     finally:
         db.close()
