@@ -1,6 +1,13 @@
 # Nixpacks config per Railway — aggiunge ffmpeg come pacchetto di sistema.
-# Serve a vehicle_podcast_worker.py per convertire PCM → MP3 128k.
-# Senza ffmpeg il worker fa fallback a WAV che Safari/iOS non supporta.
+# Serve a vehicle_podcast_worker.py e dealer_podcast_worker.py per convertire
+# PCM → MP3 128k. Senza ffmpeg i worker fanno fallback a WAV:
+# - Safari/iOS non lo supportano
+# - Supabase Storage bucket `vehicle_podcasts` rigetta WAV con 400
+#   (allowed_mime_types = audio/mpeg)
+#
+# Usiamo `nixPkgs` (non `aptPkgs`): Nix store è parte dell'immagine runtime,
+# mentre aptPkgs installa solo nella fase build e su alcuni base image
+# Railway non persiste nel runtime → binario non trovato a runtime.
 
 [phases.setup]
-aptPkgs = ["ffmpeg"]
+nixPkgs = ["ffmpeg"]
