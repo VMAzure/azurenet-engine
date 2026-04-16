@@ -30,6 +30,7 @@ from app.jobs.sync_news import sync_news_job
 from app.jobs.rewrite_news import rewrite_news_job
 from app.jobs.vehicle_podcast_worker import vehicle_podcast_worker
 from app.jobs.dealer_podcast_worker import dealer_podcast_worker
+from app.jobs.audit_rescan_worker import audit_rescan_batch
 
 from app.jobs.sync_motornet_immagini_fill import run as sync_nuovo_immagini_fill
 from app.jobs.queue_modelli_missing import run as queue_modelli_missing
@@ -378,6 +379,21 @@ def build_scheduler():
         misfire_grace_time=30,
     )
     logging.info("[SCHEDULER] DEALER PODCAST WORKER job registered (every 60s)")
+
+    # AUDIT RESCAN: processa batch di 50 domini pending ogni 5 minuti.
+    # Quando non ci sono più pending, gira a vuoto (0 operazioni).
+    # Una volta completato il backfill iniziale, può essere rimosso o
+    # trasformato in scan settimanale per monitoraggio continuo.
+    scheduler.add_job(
+        func=audit_rescan_batch,
+        trigger=IntervalTrigger(minutes=5),
+        id="audit_rescan_batch",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
+    )
+    logging.info("[SCHEDULER] AUDIT RESCAN WORKER job registered (every 5min, batch 50)")
 
     return scheduler
 
