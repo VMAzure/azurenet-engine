@@ -9,9 +9,12 @@
 
 FROM python:3.13-slim
 
-# ffmpeg per vehicle_podcast_worker e dealer_podcast_worker (PCM → MP3 128k)
+# Dipendenze di sistema:
+# - ffmpeg: PCM → MP3 128k per vehicle/dealer_podcast_worker
+# - libpq5: runtime della libreria Postgres (psycopg puro Python la cerca
+#   nel sistema; senza, l'import fallisce con "libpq library not found")
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
+ && apt-get install -y --no-install-recommends ffmpeg libpq5 \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
