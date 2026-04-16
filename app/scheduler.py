@@ -26,6 +26,7 @@ from app.jobs.usato import (
 from app.jobs.wltp_enrichment import wltp_enrichment_worker
 from app.jobs.vehicle_stock_csv_import import vehicle_stock_csv_import_job
 from app.jobs.sync_google_reviews import google_reviews_sync_job
+from app.jobs.sync_autoscout_reviews import autoscout_reviews_sync_job
 from app.jobs.sync_news import sync_news_job
 from app.jobs.rewrite_news import rewrite_news_job
 from app.jobs.vehicle_podcast_worker import vehicle_podcast_worker
@@ -290,6 +291,19 @@ def schedule_reviews_jobs(scheduler):
     )
 
     logging.info("[SCHEDULER] GOOGLE REVIEWS job registered")
+
+    # AutoScout24 reviews: scraping della pagina pubblica /concessionari/{slug}/recensioni.
+    # Scheduled 04:00 così non si sovrappone al job Google delle 03:30 e al podcast worker.
+    scheduler.add_job(
+        func=autoscout_reviews_sync_job,
+        trigger=CronTrigger(hour=4, minute=0),
+        id="autoscout_reviews_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    logging.info("[SCHEDULER] AUTOSCOUT REVIEWS job registered")
 
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
