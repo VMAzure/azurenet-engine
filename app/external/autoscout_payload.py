@@ -146,8 +146,8 @@ def build_minimal_payload(
     # -----------------------------
     # Payload finale
     # -----------------------------
-    # Km-zero: previous_owner_count == 0 → offerType "D" (Demonstration)
-    offer_type = "D" if as24_previous_owner_count == 0 else "U"
+    # Km-zero: previous_owner_count == 0 → offerType "S" (Pre-registered / km zero)
+    offer_type = "S" if as24_previous_owner_count == 0 else "U"
 
     payload = {
         "vehicleType": vehicle_type,
