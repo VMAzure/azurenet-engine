@@ -58,6 +58,7 @@ load_dotenv(BASE_DIR / ".env")
 logger = logging.getLogger(__name__)
 
 AS24_DEALER_URL = "https://www.autoscout24.it/concessionari/{slug}/recensioni"
+AS24_FETCH_REVIEWS_URL = "https://www.autoscout24.it/api/dealer-detail/fetch-reviews"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36"
@@ -67,6 +68,12 @@ NEXT_DATA_RE = re.compile(
     re.DOTALL,
 )
 REQUEST_TIMEOUT = 30.0
+# La pagina SSR serve i primi 10, poi l'UI fa POST a fetch-reviews con skip=10,20,…
+# Il server risponde con array piatto da 10 review; a fine dataset ritorna [].
+AS24_PAGE_SIZE = 10
+# Hard cap difensivo: se per qualche motivo l'endpoint non termina mai,
+# stoppiamo. 200 batch = 2000 review, ben oltre qualsiasi dealer reale.
+AS24_MAX_PAGES = 200
 
 
 # ─────────────────────────────────────────────
@@ -152,7 +159,7 @@ def _name_looks_like(as24_name: str | None, our_brand: str | None) -> bool:
 def _fetch_as24_dealer_info(slug: str) -> dict[str, Any] | None:
     """
     Scarica la pagina recensioni e ritorna il dict `dealerInfoPage` dal __NEXT_DATA__.
-    Contiene sia `ratings` (aggregato + reviews) sia i metadati dealer
+    Contiene sia `ratings` (aggregato + primi 10 review) sia i metadati dealer
     (`customerId`, `customerName`, `slug`) usati per la validazione.
     """
     url = AS24_DEALER_URL.format(slug=slug)
@@ -192,6 +199,73 @@ def _fetch_as24_dealer_info(slug: str) -> dict[str, Any] | None:
         .get("pageProps", {})
         .get("dealerInfoPage")
     )
+
+
+def _fetch_as24_extra_reviews(
+    customer_id: Any,
+    slug: str,
+    start_skip: int,
+    expected_total: int | None,
+) -> list[dict[str, Any]]:
+    """
+    Paginazione "Mostra altre" via POST a /api/dealer-detail/fetch-reviews.
+    Continua a incrementare skip di AS24_PAGE_SIZE finché la risposta è vuota
+    (fine del dataset) o abbiamo raggiunto expected_total. Hard cap AS24_MAX_PAGES
+    per paracadute.
+
+    Ogni pagina ritorna una lista piatta di oggetti con la stessa struttura
+    dei review SSR (`reviewId`, `stars`, `created`, `name`, `grades`,
+    `reviewText`, `replyText`, `replyCreated`, `topRating`).
+    """
+    if customer_id is None:
+        return []
+    all_extra: list[dict[str, Any]] = []
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json",
+        "Accept-Language": "it-IT,it;q=0.9",
+        "Content-Type": "application/json",
+        "Origin": "https://www.autoscout24.it",
+        "Referer": AS24_DEALER_URL.format(slug=slug),
+    }
+    with httpx.Client(headers=headers, http2=True, timeout=REQUEST_TIMEOUT) as client:
+        skip = start_skip
+        for _ in range(AS24_MAX_PAGES):
+            if expected_total is not None and skip >= expected_total:
+                break
+            try:
+                resp = client.post(
+                    AS24_FETCH_REVIEWS_URL,
+                    json={"customerId": customer_id, "skip": skip},
+                )
+            except httpx.RequestError as exc:
+                logger.warning(
+                    "[AS24-REVIEWS] fetch-reviews skip=%s errore rete: %s — stop",
+                    skip, exc,
+                )
+                break
+            if resp.status_code >= 400:
+                logger.warning(
+                    "[AS24-REVIEWS] fetch-reviews skip=%s HTTP %s — stop",
+                    skip, resp.status_code,
+                )
+                break
+            try:
+                batch = resp.json()
+            except json.JSONDecodeError:
+                logger.warning(
+                    "[AS24-REVIEWS] fetch-reviews skip=%s risposta non JSON — stop",
+                    skip,
+                )
+                break
+            if not isinstance(batch, list) or not batch:
+                break
+            all_extra.extend(batch)
+            if len(batch) < AS24_PAGE_SIZE:
+                # Ultimo batch parziale: fine del dataset.
+                break
+            skip += AS24_PAGE_SIZE
+    return all_extra
 
 
 def _parse_as24_date(s: str | None) -> datetime | None:
@@ -368,7 +442,23 @@ def sync_dealer_autoscout_reviews(
         )
 
     ratings = info.get("ratings") or {}
-    reviews = ratings.get("reviews") or []
+    ssr_reviews = ratings.get("reviews") or []
+    review_count = ratings.get("reviewCount")
+
+    # Se AS24 dichiara più di AS24_PAGE_SIZE review, paginiamo via XHR
+    # per raccogliere lo storico completo (non solo gli ultimi 10).
+    extra_reviews: list[dict[str, Any]] = []
+    if page_cid is not None and (
+        review_count is None or review_count > len(ssr_reviews)
+    ):
+        extra_reviews = _fetch_as24_extra_reviews(
+            customer_id=page_cid,
+            slug=slug,
+            start_skip=len(ssr_reviews),
+            expected_total=review_count,
+        )
+
+    all_reviews = ssr_reviews + extra_reviews
 
     db: Session = SessionLocal()
     try:
@@ -377,16 +467,19 @@ def sync_dealer_autoscout_reviews(
             page_customer_id=page_cid,
             page_customer_name=page_name,
         )
-        inserted, skipped = _insert_reviews(db, dealer_id, reviews)
+        inserted, skipped = _insert_reviews(db, dealer_id, all_reviews)
         db.commit()
         logger.info(
-            "[AS24-REVIEWS] DONE dealer_id=%s inserted=%s skipped=%s "
-            "rating=%s count=%s recommend=%s%% (as24_cid=%s name=%r)",
+            "[AS24-REVIEWS] DONE dealer_id=%s ssr=%s extra=%s "
+            "inserted=%s skipped=%s rating=%s count=%s recommend=%s%% "
+            "(as24_cid=%s name=%r)",
             dealer_id,
+            len(ssr_reviews),
+            len(extra_reviews),
             inserted,
             skipped,
             ratings.get("ratingAverage"),
-            ratings.get("reviewCount"),
+            review_count,
             ratings.get("recommendPercentage"),
             page_cid,
             page_name,
