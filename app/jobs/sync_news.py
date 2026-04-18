@@ -32,6 +32,31 @@ BODY_STRIP_PREFIXES = {
     "autoappassionati.it": "scritte da chi le auto le guida per davvero. ",
 }
 
+# Suffissi testata nei titoli APITube (es. "... - Autoblog"). Rimossi al
+# momento dell'insert così anche il fallback a news_articles.title (usato
+# prima che il rewrite popoli title_rewritten) è già pulito.
+_TITLE_SUFFIX_PATTERNS: dict[str, str] = {
+    "autoblog.it":       r"Autoblog",
+    "hdmotori.it":       r"HDmotori",
+    "alvolante.it":      r"Al\s*Volante",
+    "it.motor1.com":     r"Motor1(?:\s*Italia)?",
+    "motorbox.com":      r"Motorbox",
+    "vaielettrico.it":   r"Vaielettrico",
+    "insideevs.it":      r"InsideEVs(?:\s*Italia)?",
+    "formulapassion.it": r"Formula\s*Passion",
+    "ruoteclassiche.it": r"Ruote\s*Classiche",
+}
+
+
+def clean_title(title: str | None, source_domain: str) -> str:
+    if not title:
+        return ""
+    pattern = _TITLE_SUFFIX_PATTERNS.get(source_domain)
+    if not pattern:
+        return title.strip()
+    cleaned = re.sub(rf"\s*[-|]\s*{pattern}\s*$", "", title, flags=re.IGNORECASE)
+    return cleaned.strip() or title.strip()
+
 
 def _slugify(txt: str) -> str:
     """Slug SEO italiano: lower + rimozione accenti + solo [a-z0-9-], max 80."""
@@ -164,7 +189,7 @@ def sync_news_job():
                 continue
 
             # Inserisci articolo (slug stabile generato dal titolo)
-            title_value = a.get("title", "")
+            title_value = clean_title(a.get("title", ""), source_domain)
             slug = generate_unique_slug(db, title_value)
             result = db.execute(
                 text("""
