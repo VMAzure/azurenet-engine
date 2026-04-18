@@ -1,7 +1,7 @@
 """
 DealerMAX Press Podcast — generatore one-shot.
 
-Trasforma il contenuto di DealerMax/docs/dealermax-press.html in un podcast
+Trasforma il press kit DealerMAX (costanti PRESS_* in questo file) in un podcast
 in formato "intervista a due voci":
   - LUCIA (Laomedeia): giornalista tech italiana, curiosa, fa domande scomode
   - VALERIO (Algenib): Valerio Marinucci, fondatore DealerMAX, risponde
@@ -57,8 +57,7 @@ PRESS_BUCKET = "dealermax_press"
 
 
 # ─────────────────────────────────────────────────────────────
-# Press content — estratto curato da dealermax-press.html
-# Tenuto qui per avere uno script self-contained e riproducibile.
+# Press content — tenuto qui per avere uno script self-contained e riproducibile.
 # Se il press cambia, aggiornare SOLO queste costanti.
 # ─────────────────────────────────────────────────────────────
 
