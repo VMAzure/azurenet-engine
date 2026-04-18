@@ -24,6 +24,7 @@ from app.jobs.usato import (
 
 
 from app.jobs.wltp_enrichment import wltp_enrichment_worker
+from app.jobs.wltp_consumi_enrichment import wltp_consumi_enrichment_worker
 from app.jobs.vehicle_stock_csv_import import vehicle_stock_csv_import_job
 from app.jobs.sync_google_reviews import google_reviews_sync_job
 from app.jobs.sync_autoscout_reviews import autoscout_reviews_sync_job
@@ -264,6 +265,20 @@ def schedule_wltp_jobs(scheduler):
     )
 
     logging.info("[SCHEDULER] WLTP enrichment job registered")
+
+    # --------------------------------------------------
+    # WLTP CONSUMI / CO2 ENRICHMENT (mnet_dettagli_usato)
+    # --------------------------------------------------
+    scheduler.add_job(
+        func=wltp_consumi_enrichment_worker,
+        trigger=CronTrigger(minute="*/2"),  # ogni 2 minuti, batch 100 codici
+        id="wltp_consumi_enrichment",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    logging.info("[SCHEDULER] WLTP consumi/CO2 enrichment job registered")
 
 
     # --------------------------------------------------
