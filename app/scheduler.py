@@ -29,6 +29,7 @@ from app.jobs.sync_google_reviews import google_reviews_sync_job
 from app.jobs.sync_autoscout_reviews import autoscout_reviews_sync_job
 from app.jobs.sync_news import sync_news_job
 from app.jobs.rewrite_news import rewrite_news_job
+from app.jobs.rewrite_news_styles import rewrite_news_styles_job
 from app.jobs.vehicle_podcast_worker import vehicle_podcast_worker
 from app.jobs.dealer_podcast_worker import dealer_podcast_worker
 from app.jobs.audit_rescan_worker import audit_rescan_batch
@@ -357,7 +358,7 @@ def build_scheduler():
     )
     logging.info("[SCHEDULER] NEWS SYNC job registered")
 
-    # registra REWRITE NEWS (1 ora dopo il fetch)
+    # registra REWRITE NEWS (1 ora dopo il fetch) — stile default "professionale"
     scheduler.add_job(
         func=rewrite_news_job,
         trigger=CronTrigger(hour=3, minute=30),
@@ -367,6 +368,19 @@ def build_scheduler():
         coalesce=True,
     )
     logging.info("[SCHEDULER] NEWS REWRITE job registered")
+
+    # registra REWRITE NEWS STYLES (30 min dopo il default) — solo stili
+    # custom effettivamente selezionati da almeno un dealer, cache condivisa
+    # su news_article_rewrites.
+    scheduler.add_job(
+        func=rewrite_news_styles_job,
+        trigger=CronTrigger(hour=4, minute=0),
+        id="news_rewrite_styles",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    logging.info("[SCHEDULER] NEWS REWRITE STYLES job registered")
 
     # PODCAST VEICOLO (coda async): poll ogni 60s, processa BATCH_SIZE righe.
     # core_api_v2 accoda status='pending' al click del dealer, questo worker

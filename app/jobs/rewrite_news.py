@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -22,47 +23,84 @@ BATCH_SIZE = 10  # articoli per run
 
 logging.basicConfig(level=logging.INFO)
 
-SYSTEM_PROMPT = """Sei un redattore editoriale automotive. Riscrivi l'articolo che ti viene fornito seguendo queste regole:
+# ─────────────────────────────────────────────────────────────
+# PROMPT BUILDER
+# ─────────────────────────────────────────────────────────────
+# Il default "professionale" riscrive il body e ripulisce il titolo dalle
+# citazioni della testata originale. Gli altri stili sono usati dal worker
+# rewrite_news_styles_job e salvano su news_article_rewrites.
 
-- Scrivi in italiano, tono professionale ma accessibile
-- Mantieni tutti i fatti, dati e cifre originali
-- Rimuovi qualsiasi riferimento al sito sorgente, autori, call to action o link
-- Inserisci il placeholder {{DEALER_NAME}} in modo naturale 1 o 2 volte nel testo (es. "come spiega {{DEALER_NAME}}", "per {{DEALER_NAME}} questo significa...")
-- Lunghezza simile all'originale
-- Rispondi solo con il testo riscritto, senza introduzioni né note finali"""
+STYLE_LINES: dict[str, str] = {
+    "professionale": "Tono formale e sobrio, terza persona, frasi piane, terminologia tecnica corretta.",
+    "giornalistico": "Tono da cronaca automotive: incipit d'impatto, verbi attivi, ritmo dinamico, paragrafi brevi.",
+    "amichevole":    "Tono colloquiale, dai del 'tu' al lettore, usa analogie quotidiane, riduci il gergo tecnico.",
+    "tecnico":       "Approfondisci dati, cifre, specifiche e confronti numerici. Lessico da appassionati informati.",
+}
 
 
-def rewrite_article(body: str) -> str | None:
+def build_system_prompt(style: str) -> str:
+    style_line = STYLE_LINES.get(style, STYLE_LINES["professionale"])
+    return (
+        "Sei un redattore editoriale automotive. Riscrivi titolo e corpo dell'articolo "
+        "fornito seguendo queste regole obbligatorie:\n"
+        "- Rispondi SOLO con un JSON valido con due chiavi stringa: \"title\" e \"body\".\n"
+        "- Nessun preambolo, nessun commento, nessun testo fuori dal JSON.\n"
+        "- \"title\": riscrivi in italiano, naturale, massimo 110 caratteri. "
+        "NON menzionare testate, siti o fonti originali (niente \"Autoblog\", \"HDmotori\", "
+        "\"Motor1\", \"AUTONEWS\", \"Al Volante\", \"Motorbox\", \"InsideEVs\", ecc.).\n"
+        "- \"body\": riscrivi in italiano mantenendo TUTTI i fatti, dati e cifre originali. "
+        "Lunghezza simile all'originale.\n"
+        "- Rimuovi qualsiasi riferimento al sito sorgente, autori originali, call to action o link.\n"
+        "- Inserisci il placeholder {{DEALER_NAME}} nel body 1 o 2 volte in modo naturale "
+        "(es. \"come osserva {{DEALER_NAME}}\", \"per {{DEALER_NAME}} questo significa...\"). "
+        "NON inserire il placeholder nel title.\n"
+        f"- Stile: {style_line}"
+    )
+
+
+def rewrite_article_json(title: str | None, body: str, style: str = "professionale") -> dict | None:
+    """Chiama OpenAI e ritorna {'title': str, 'body': str} o None su errore."""
     if not OPENAI_API_KEY:
         logging.error("[REWRITE] OPENAI_API_KEY non configurata")
         return None
 
     client = OpenAI(api_key=OPENAI_API_KEY)
+    user_content = f"TITOLO ORIGINALE: {title or ''}\n\nCORPO ORIGINALE:\n{body}"
 
     try:
         response = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": body},
+                {"role": "system", "content": build_system_prompt(style)},
+                {"role": "user",   "content": user_content},
             ],
             temperature=0.7,
             max_tokens=2000,
+            response_format={"type": "json_object"},
         )
-        return response.choices[0].message.content.strip() or None
+        raw = (response.choices[0].message.content or "").strip()
+        if not raw:
+            return None
+        parsed = json.loads(raw)
+        new_title = (parsed.get("title") or "").strip() or None
+        new_body  = (parsed.get("body")  or "").strip() or None
+        if not new_body:
+            return None
+        return {"title": new_title, "body": new_body}
     except Exception:
         logging.exception("[REWRITE] OpenAI call failed")
         return None
 
 
 def rewrite_news_job(batch_size: int = BATCH_SIZE):
+    """Rewrite default (stile professionale) su news_articles.title_rewritten / body_rewritten."""
     logging.info("[REWRITE] start")
 
     db = SessionLocal()
     try:
         rows = db.execute(
             text("""
-                SELECT id, body FROM news_articles
+                SELECT id, title, body FROM news_articles
                 WHERE body IS NOT NULL
                   AND body_rewritten IS NULL
                 ORDER BY published_at DESC
@@ -81,25 +119,27 @@ def rewrite_news_job(batch_size: int = BATCH_SIZE):
         failed = 0
 
         for row in rows:
-            rewritten = rewrite_article(row.body)
+            result = rewrite_article_json(row.title, row.body, style="professionale")
 
-            if rewritten:
+            if result and result.get("body"):
                 db.execute(
                     text("""
                         UPDATE news_articles
-                        SET body_rewritten = :body_rewritten,
-                            rewritten_at   = :rewritten_at
+                        SET body_rewritten  = :body_rewritten,
+                            title_rewritten = :title_rewritten,
+                            rewritten_at    = :rewritten_at
                         WHERE id = :id
                     """),
                     {
                         "id": row.id,
-                        "body_rewritten": rewritten,
-                        "rewritten_at": datetime.now(timezone.utc),
+                        "body_rewritten":  result["body"],
+                        "title_rewritten": result.get("title"),
+                        "rewritten_at":    datetime.now(timezone.utc),
                     },
                 )
                 db.commit()
                 done += 1
-                logging.info(f"[REWRITE] id={row.id} ok ({len(rewritten)} chars)")
+                logging.info(f"[REWRITE] id={row.id} ok ({len(result['body'])} chars body)")
             else:
                 failed += 1
                 logging.warning(f"[REWRITE] id={row.id} failed")
@@ -116,7 +156,7 @@ def rewrite_news_job(batch_size: int = BATCH_SIZE):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Riscrivi news con AI")
+    parser = argparse.ArgumentParser(description="Riscrivi news con AI (stile default professionale)")
     parser.add_argument("--run", action="store_true", help="Esegui subito il job")
     parser.add_argument("--batch", type=int, default=BATCH_SIZE, help=f"Articoli per run (default {BATCH_SIZE})")
     args = parser.parse_args()
