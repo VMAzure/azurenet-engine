@@ -29,7 +29,7 @@ from app.jobs.rewrite_news import rewrite_article_json
 load_dotenv(_PROJECT_ROOT / ".env")
 
 CUSTOM_STYLES = ("giornalistico", "amichevole", "tecnico")
-BATCH_SIZE_PER_STYLE = 10  # articoli per stile per run
+BATCH_SIZE_PER_STYLE = 50  # articoli per stile per run (coprire picchi APITube + smaltire backlog)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -61,6 +61,7 @@ def rewrite_news_styles_job(batch_size: int = BATCH_SIZE_PER_STYLE):
         logging.info(f"[REWRITE-STYLES] stili attivi: {styles}")
 
         for style in styles:
+            # ORDER BY ASC: smaltisce backlog pending prima dei nuovi.
             rows = db.execute(
                 text("""
                     SELECT a.id, a.title, a.body
@@ -69,7 +70,7 @@ def rewrite_news_styles_job(batch_size: int = BATCH_SIZE_PER_STYLE):
                            ON r.article_id = a.id AND r.style = :style
                     WHERE a.body IS NOT NULL
                       AND r.article_id IS NULL
-                    ORDER BY a.published_at DESC
+                    ORDER BY a.published_at ASC
                     LIMIT :batch
                 """),
                 {"style": style, "batch": batch_size},

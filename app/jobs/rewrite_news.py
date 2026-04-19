@@ -19,7 +19,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL = "gpt-4o-mini"
-BATCH_SIZE = 10  # articoli per run
+BATCH_SIZE = 50  # articoli per run (coprire picchi APITube + smaltire backlog)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -98,12 +98,16 @@ def rewrite_news_job(batch_size: int = BATCH_SIZE):
 
     db = SessionLocal()
     try:
+        # ORDER BY: pending più vecchi prima (backlog catch-up), poi nuovi.
+        # Evita il bug storico: con ORDER BY DESC + BATCH piccolo, gli articoli
+        # sopra-soglia di un giorno di picco rimanevano pending per sempre perché
+        # il run successivo ripescava i nuovi.
         rows = db.execute(
             text("""
                 SELECT id, title, body FROM news_articles
                 WHERE body IS NOT NULL
                   AND body_rewritten IS NULL
-                ORDER BY published_at DESC
+                ORDER BY published_at ASC
                 LIMIT :batch
             """),
             {"batch": batch_size},
