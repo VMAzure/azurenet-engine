@@ -34,6 +34,7 @@ from app.jobs.rewrite_news_styles import rewrite_news_styles_job
 from app.jobs.vehicle_podcast_worker import vehicle_podcast_worker
 from app.jobs.dealer_podcast_worker import dealer_podcast_worker
 from app.jobs.audit_rescan_worker import audit_rescan_batch
+from app.jobs.dmax_suspension_worker import dmax_suspension_worker
 
 from app.jobs.sync_motornet_immagini_fill import run as sync_nuovo_immagini_fill
 from app.jobs.queue_modelli_missing import run as queue_modelli_missing
@@ -437,6 +438,20 @@ def build_scheduler():
         misfire_grace_time=120,
     )
     logging.info("[SCHEDULER] AUDIT RESCAN WORKER job registered (every 5min, batch 50)")
+
+    # DMAX SUSPENSION (differita): conferma la sospensione dei dealer il cui
+    # dmax_suspension_pending_at e' scaduto. Verifica lo stato su Stripe prima
+    # di sospendere, per non bloccare pagamenti SEPA in volo.
+    scheduler.add_job(
+        func=dmax_suspension_worker,
+        trigger=CronTrigger(hour=5, minute=30),
+        id="dmax_suspension_worker",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+    logging.info("[SCHEDULER] DMAX SUSPENSION WORKER job registered (daily 05:30)")
 
     return scheduler
 
